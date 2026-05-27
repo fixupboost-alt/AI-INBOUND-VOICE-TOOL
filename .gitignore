@@ -1,0 +1,39 @@
+# ── Secrets & environment ────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+
+# ── Live config (contains real keys/settings from dashboard) ─────────────────
+config.json
+
+# ── Google Calendar credentials ──────────────────────────────────────────────
+google_creds.json
+*.json.key
+
+# ── Python ───────────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

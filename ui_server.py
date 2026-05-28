@@ -361,14 +361,22 @@ async def get_demo_page():
 
 # ── Prometheus Metrics (#40) ──────────────────────────────────────────────────
 try:
-    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
     from fastapi.responses import Response as _Resp
 
-    _voice_calls_total   = Counter("voice_calls_total",   "Total calls handled by the agent")
-    _voice_calls_booked  = Counter("voice_calls_booked_total", "Calls that resulted in a booking")
-    _voice_call_duration = Histogram("voice_call_duration_seconds", "Call duration in seconds",
-                                      buckets=[10, 30, 60, 120, 300, 600, 1200])
-    _voice_calls_active  = Gauge("voice_calls_active", "Currently active calls")
+    def _get_or_create_metric(metric_class, name, description, **kwargs):
+        """Safe get-or-create to avoid duplicate registration on hot-reload."""
+        try:
+            return metric_class(name, description, **kwargs)
+        except ValueError:
+            # Already registered — retrieve from registry
+            return REGISTRY._names_to_collectors.get(name) or metric_class(name, description, **kwargs)
+
+    _voice_calls_total   = _get_or_create_metric(Counter,   "voice_calls_total",          "Total calls handled by the agent")
+    _voice_calls_booked  = _get_or_create_metric(Counter,   "voice_calls_booked_total",   "Calls that resulted in a booking")
+    _voice_call_duration = _get_or_create_metric(Histogram, "voice_call_duration_seconds", "Call duration in seconds",
+                                                  buckets=[10, 30, 60, 120, 300, 600, 1200])
+    _voice_calls_active  = _get_or_create_metric(Gauge,     "voice_calls_active",         "Currently active calls")
 
     @app.get("/metrics", include_in_schema=False)
     def metrics():
@@ -405,11 +413,6 @@ def health_check():
 
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard():
-    config = read_config()
-
-    def sel(key, val):
-        return "selected" if config.get(key) == val else ""
-
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -530,10 +533,11 @@ async def get_dashboard():
     .btn-ghost:hover {{ border-color: var(--accent); color: var(--accent); }}
     .btn-sm {{ padding: 5px 12px; font-size: 12px; }}
     .save-bar {{
-      position: sticky; bottom: 0; left: 0; right: 0;
-      background: rgba(22,27,39,0.95); backdrop-filter: blur(12px);
+      position: relative;
+      background: rgba(22,27,39,0.98); backdrop-filter: blur(12px);
       border-top: 1px solid var(--border);
-      padding: 14px 36px; display: flex; align-items: center; justify-content: space-between; z-index: 20;
+      padding: 14px 36px; display: flex; align-items: center; justify-content: space-between; z-index: 5;
+      margin-top: 20px; border-radius: 0 0 12px 12px;
     }}
     .save-status {{ font-size: 13px; font-weight: 500; color: var(--green); opacity: 0; transition: opacity 0.3s; }}
 
@@ -697,7 +701,7 @@ async def get_dashboard():
       <div class="section-title">Opening Greeting</div>
       <div class="form-group">
         <label>First Line (What the agent says when a call connects)</label>
-        <input type="text" id="first_line" value="{config.get('first_line', '')}" placeholder="Namaste! This is Aryan from RapidX AI...">
+        <input type="text" id="first_line" placeholder="Namaste! This is Aryan from RapidX AI...">
         <div class="hint">This is the very first thing the agent says. Keep it concise and warm.</div>
       </div>
     </div>
@@ -705,7 +709,7 @@ async def get_dashboard():
       <div class="section-title">System Prompt</div>
       <div class="form-group">
         <label>Master System Prompt</label>
-        <textarea id="agent_instructions" rows="16" placeholder="Enter the AI's full personality and instructions...">{config.get('agent_instructions', '')}</textarea>
+        <textarea id="agent_instructions" rows="16" placeholder="Enter the AI's full personality and instructions..."></textarea>
         <div class="hint">Date and time context are injected automatically. Do not hardcode today's date.</div>
       </div>
     </div>
@@ -713,7 +717,7 @@ async def get_dashboard():
       <div class="section-title">Listening Sensitivity</div>
       <div class="form-group" style="max-width:220px;">
         <label>Endpointing Delay (seconds)</label>
-        <input type="number" id="stt_min_endpointing_delay" step="0.05" min="0.1" max="3.0" value="{config.get('stt_min_endpointing_delay', 0.6)}">
+        <input type="number" id="stt_min_endpointing_delay" step="0.05" min="0.1" max="3.0" value="0.6">
         <div class="hint">Seconds the AI waits after silence before responding. Default: 0.6</div>
       </div>
     </div>
@@ -734,15 +738,15 @@ async def get_dashboard():
       <div class="form-group" style="max-width:360px;">
         <label>OpenAI Model</label>
         <select id="llm_model">
-          <option value="gpt-4o-mini" {sel('llm_model','gpt-4o-mini')}>gpt-4o-mini — Fast &amp; Cheap (Default)</option>
-          <option value="gpt-4o" {sel('llm_model','gpt-4o')}>gpt-4o — Balanced</option>
-          <option value="gpt-4.1" {sel('llm_model','gpt-4.1')}>gpt-4.1 — Latest (Recommended)</option>
-          <option value="gpt-4.1-mini" {sel('llm_model','gpt-4.1-mini')}>gpt-4.1-mini — Fast &amp; Latest</option>
-          <option value="gpt-4.5-preview" {sel('llm_model','gpt-4.5-preview')}>gpt-4.5-preview — Most Capable</option>
-          <option value="o4-mini" {sel('llm_model','o4-mini')}>o4-mini — Reasoning, Fast</option>
-          <option value="o3" {sel('llm_model','o3')}>o3 — Reasoning, Best</option>
-          <option value="gpt-4-turbo" {sel('llm_model','gpt-4-turbo')}>gpt-4-turbo — Legacy</option>
-          <option value="gpt-3.5-turbo" {sel('llm_model','gpt-3.5-turbo')}>gpt-3.5-turbo — Cheapest</option>
+          <option value="gpt-4o-mini">gpt-4o-mini — Fast &amp; Cheap (Default)</option>
+          <option value="gpt-4o">gpt-4o — Balanced</option>
+          <option value="gpt-4.1">gpt-4.1 — Latest (Recommended)</option>
+          <option value="gpt-4.1-mini">gpt-4.1-mini — Fast &amp; Latest</option>
+          <option value="gpt-4.5-preview">gpt-4.5-preview — Most Capable</option>
+          <option value="o4-mini">o4-mini — Reasoning, Fast</option>
+          <option value="o3">o3 — Reasoning, Best</option>
+          <option value="gpt-4-turbo">gpt-4-turbo — Legacy</option>
+          <option value="gpt-3.5-turbo">gpt-3.5-turbo — Cheapest</option>
         </select>
       </div>
     </div>
@@ -752,30 +756,30 @@ async def get_dashboard():
         <div class="form-group">
           <label>Speaker Voice</label>
           <select id="tts_voice">
-            <option value="kavya" {sel('tts_voice','kavya')}>Kavya — Female, Friendly</option>
-            <option value="rohan" {sel('tts_voice','rohan')}>Rohan — Male, Balanced</option>
-            <option value="priya" {sel('tts_voice','priya')}>Priya — Female, Warm</option>
-            <option value="shubh" {sel('tts_voice','shubh')}>Shubh — Male, Formal</option>
-            <option value="shreya" {sel('tts_voice','shreya')}>Shreya — Female, Clear</option>
-            <option value="ritu" {sel('tts_voice','ritu')}>Ritu — Female, Soft</option>
-            <option value="rahul" {sel('tts_voice','rahul')}>Rahul — Male, Deep</option>
-            <option value="amit" {sel('tts_voice','amit')}>Amit — Male, Casual</option>
-            <option value="neha" {sel('tts_voice','neha')}>Neha — Female, Energetic</option>
-            <option value="dev" {sel('tts_voice','dev')}>Dev — Male, Professional</option>
+            <option value="kavya">Kavya — Female, Friendly</option>
+            <option value="rohan">Rohan — Male, Balanced</option>
+            <option value="priya">Priya — Female, Warm</option>
+            <option value="shubh">Shubh — Male, Formal</option>
+            <option value="shreya">Shreya — Female, Clear</option>
+            <option value="ritu">Ritu — Female, Soft</option>
+            <option value="rahul">Rahul — Male, Deep</option>
+            <option value="amit">Amit — Male, Casual</option>
+            <option value="neha">Neha — Female, Energetic</option>
+            <option value="dev">Dev — Male, Professional</option>
           </select>
         </div>
         <div class="form-group">
           <label>Language</label>
           <select id="tts_language">
-            <option value="hi-IN" {sel('tts_language','hi-IN')}>Hindi (hi-IN)</option>
-            <option value="en-IN" {sel('tts_language','en-IN')}>English India (en-IN)</option>
-            <option value="ta-IN" {sel('tts_language','ta-IN')}>Tamil (ta-IN)</option>
-            <option value="te-IN" {sel('tts_language','te-IN')}>Telugu (te-IN)</option>
-            <option value="kn-IN" {sel('tts_language','kn-IN')}>Kannada (kn-IN)</option>
-            <option value="ml-IN" {sel('tts_language','ml-IN')}>Malayalam (ml-IN)</option>
-            <option value="mr-IN" {sel('tts_language','mr-IN')}>Marathi (mr-IN)</option>
-            <option value="gu-IN" {sel('tts_language','gu-IN')}>Gujarati (gu-IN)</option>
-            <option value="bn-IN" {sel('tts_language','bn-IN')}>Bengali (bn-IN)</option>
+            <option value="hi-IN">Hindi (hi-IN)</option>
+            <option value="en-IN">English India (en-IN)</option>
+            <option value="ta-IN">Tamil (ta-IN)</option>
+            <option value="te-IN">Telugu (te-IN)</option>
+            <option value="kn-IN">Kannada (kn-IN)</option>
+            <option value="ml-IN">Malayalam (ml-IN)</option>
+            <option value="mr-IN">Marathi (mr-IN)</option>
+            <option value="gu-IN">Gujarati (gu-IN)</option>
+            <option value="bn-IN">Bengali (bn-IN)</option>
           </select>
         </div>
       </div>
@@ -787,7 +791,45 @@ async def get_dashboard():
   </div>
 
   <!-- ── API Credentials ── -->
-  <!-- CRM Contacts Page -->
+  <div id="page-credentials" class="page">
+    <div class="page-header">
+      <div class="page-title">API Credentials</div>
+      <div class="page-sub">Credentials here override .env values at runtime. Never share this page.</div>
+    </div>
+    <div class="section-card">
+      <div class="section-title">LiveKit</div>
+      <div class="form-row">
+        <div class="form-group"><label>LiveKit URL</label><input type="text" id="livekit_url"></div>
+        <div class="form-group"><label>SIP Trunk ID</label><input type="text" id="sip_trunk_id"></div>
+        <div class="form-group"><label>API Key</label><input type="password" id="livekit_api_key"></div>
+        <div class="form-group"><label>API Secret</label><input type="password" id="livekit_api_secret"></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-title">AI Providers</div>
+      <div class="form-row">
+        <div class="form-group"><label>OpenAI API Key</label><input type="password" id="openai_api_key"></div>
+        <div class="form-group"><label>Sarvam API Key</label><input type="password" id="sarvam_api_key"></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-title">Integrations</div>
+      <div class="form-row">
+        <div class="form-group"><label>Cal.com API Key</label><input type="password" id="cal_api_key"></div>
+        <div class="form-group"><label>Cal.com Event Type ID</label><input type="text" id="cal_event_type_id"></div>
+        <div class="form-group"><label>Telegram Bot Token</label><input type="password" id="telegram_bot_token"></div>
+        <div class="form-group"><label>Telegram Chat ID</label><input type="text" id="telegram_chat_id"></div>
+        <div class="form-group"><label>Supabase URL</label><input type="text" id="supabase_url"></div>
+        <div class="form-group"><label>Supabase Anon Key</label><input type="password" id="supabase_key"></div>
+      </div>
+    </div>
+    <div class="save-bar">
+      <span class="save-status" id="save-status-credentials">✅ Saved!</span>
+      <button class="btn btn-primary" onclick="saveConfig('credentials')">💾 Save Credentials</button>
+    </div>
+  </div>
+
+  <!-- ── CRM Contacts Page -->
   <div id="page-crm" class="page">
     <div class="page-header">
       <div class="page-title">👥 CRM Contacts</div>
@@ -901,44 +943,6 @@ async def get_dashboard():
     </div>
   </div>
 
-    <div id="page-credentials" class="page">
-    <div class="page-header">
-      <div class="page-title">API Credentials</div>
-      <div class="page-sub">Credentials here override .env values at runtime. Never share this page.</div>
-    </div>
-    <div class="section-card">
-      <div class="section-title">LiveKit</div>
-      <div class="form-row">
-        <div class="form-group"><label>LiveKit URL</label><input type="text" id="livekit_url" value="{config.get('livekit_url', '')}"></div>
-        <div class="form-group"><label>SIP Trunk ID</label><input type="text" id="sip_trunk_id" value="{config.get('sip_trunk_id', '')}"></div>
-        <div class="form-group"><label>API Key</label><input type="password" id="livekit_api_key" value="{config.get('livekit_api_key', '')}"></div>
-        <div class="form-group"><label>API Secret</label><input type="password" id="livekit_api_secret" value="{config.get('livekit_api_secret', '')}"></div>
-      </div>
-    </div>
-    <div class="section-card">
-      <div class="section-title">AI Providers</div>
-      <div class="form-row">
-        <div class="form-group"><label>OpenAI API Key</label><input type="password" id="openai_api_key" value="{config.get('openai_api_key', '')}"></div>
-        <div class="form-group"><label>Sarvam API Key</label><input type="password" id="sarvam_api_key" value="{config.get('sarvam_api_key', '')}"></div>
-      </div>
-    </div>
-    <div class="section-card">
-      <div class="section-title">Integrations</div>
-      <div class="form-row">
-        <div class="form-group"><label>Cal.com API Key</label><input type="password" id="cal_api_key" value="{config.get('cal_api_key', '')}"></div>
-        <div class="form-group"><label>Cal.com Event Type ID</label><input type="text" id="cal_event_type_id" value="{config.get('cal_event_type_id', '')}"></div>
-        <div class="form-group"><label>Telegram Bot Token</label><input type="password" id="telegram_bot_token" value="{config.get('telegram_bot_token', '')}"></div>
-        <div class="form-group"><label>Telegram Chat ID</label><input type="text" id="telegram_chat_id" value="{config.get('telegram_chat_id', '')}"></div>
-        <div class="form-group"><label>Supabase URL</label><input type="text" id="supabase_url" value="{config.get('supabase_url', '')}"></div>
-        <div class="form-group"><label>Supabase Anon Key</label><input type="password" id="supabase_key" value="{config.get('supabase_key', '')}"></div>
-      </div>
-    </div>
-    <div class="save-bar">
-      <span class="save-status" id="save-status-credentials">✅ Saved!</span>
-      <button class="btn btn-primary" onclick="saveConfig('credentials')">💾 Save Credentials</button>
-    </div>
-  </div>
-
   <!-- ── Call Logs ── -->
   <div id="page-logs" class="page">
     <div class="page-header">
@@ -971,11 +975,36 @@ async def get_dashboard():
 
 <script>
 // ── Navigation ──────────────────────────────────────────────────────────────
-function goTo(pageId, el) {{
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + pageId).classList.add('active');
-  el.classList.add('active');
+function goTo(pageId, navEl) {{
+  // Hide ALL pages directly via style (bypasses any CSS issues)
+  document.querySelectorAll('.page').forEach(function(p) {{
+    p.style.display = 'none';
+    p.classList.remove('active');
+  }});
+  // Deactivate all nav items
+  document.querySelectorAll('.nav-item').forEach(function(n) {{
+    n.classList.remove('active');
+  }});
+  // Show only the target page
+  var target = document.getElementById('page-' + pageId);
+  if (target) {{
+    target.style.display = 'block';
+    target.classList.add('active');
+  }}
+  // Mark nav item active
+  if (navEl) navEl.classList.add('active');
+  // Scroll back to top
+  var main = document.getElementById('main');
+  if (main) main.scrollTop = 0;
+}}
+
+// Set up page visibility on first load
+function initNav() {{
+  document.querySelectorAll('.page').forEach(function(p) {{
+    p.style.display = 'none';
+  }});
+  var dash = document.getElementById('page-dashboard');
+  if (dash) dash.style.display = 'block';
 }}
 
 // ── Stats & Dashboard ───────────────────────────────────────────────────────
@@ -1356,8 +1385,44 @@ function copyDemoLink() {{
   setTimeout(()=>document.getElementById('copy-demo-btn').textContent='📋 Copy Link', 2000);
 }}
 
+// ── Load Config into forms (safe JS assignment, no HTML injection) ───────────
+async function loadConfig() {{
+  try {{
+    const cfg = await fetch('/api/config').then(r => r.json());
+    const set = (id, val) => {{ const el = document.getElementById(id); if (el && val !== undefined && val !== null) el.value = val; }};
+    const setSelect = (id, val) => {{
+      const el = document.getElementById(id);
+      if (!el || !val) return;
+      for (const opt of el.options) {{ if (opt.value === String(val)) {{ opt.selected = true; break; }} }}
+    }};
+    // Agent Settings
+    set('first_line', cfg.first_line);
+    set('agent_instructions', cfg.agent_instructions);
+    set('stt_min_endpointing_delay', cfg.stt_min_endpointing_delay);
+    // Models & Voice
+    setSelect('llm_model', cfg.llm_model);
+    setSelect('tts_voice', cfg.tts_voice);
+    setSelect('tts_language', cfg.tts_language);
+    // API Credentials
+    set('livekit_url', cfg.livekit_url);
+    set('sip_trunk_id', cfg.sip_trunk_id);
+    set('livekit_api_key', cfg.livekit_api_key);
+    set('livekit_api_secret', cfg.livekit_api_secret);
+    set('openai_api_key', cfg.openai_api_key);
+    set('sarvam_api_key', cfg.sarvam_api_key);
+    set('cal_api_key', cfg.cal_api_key);
+    set('cal_event_type_id', cfg.cal_event_type_id);
+    set('telegram_bot_token', cfg.telegram_bot_token);
+    set('telegram_chat_id', cfg.telegram_chat_id);
+    set('supabase_url', cfg.supabase_url);
+    set('supabase_key', cfg.supabase_key);
+  }} catch(e) {{ console.warn('Could not load config:', e); }}
+}}
+
 // ── Boot ────────────────────────────────────────────────────────────────────
+initNav();
 loadDashboard();
+loadConfig();
 </script>
 </body>
 </html>"""
@@ -1367,4 +1432,4 @@ loadDashboard();
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("ui_server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("ui_server:app", host="0.0.0.0", port=8000, reload=False)

@@ -215,7 +215,7 @@ Open a **second terminal** in the same folder, activate the venv again, then:
 python ui_server.py
 ```
 
-Dashboard is now at: **[http://localhost:8000](http://localhost:8000)**
+Dashboard is now at: **[http://64.227.157.91:8000](http://64.227.157.91:8000)**
 
 ---
 

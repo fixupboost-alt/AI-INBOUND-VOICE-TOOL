@@ -33,7 +33,7 @@ The UI Server allows you to easily configure your agent's prompt, select voices/
 
 4. **Open the Dashboard**:
    Open your web browser (Chrome, Safari, etc.) and go to:
-   **[http://localhost:8000](http://localhost:8000)**
+   **[http://64.227.157.91:8000](http://64.227.157.91:8000)**
 
    *Note: If you get an `address already in use` error, it means the server is already running in another terminal window or in the background. Just open your browser to the link above!*
 
@@ -43,7 +43,7 @@ The UI Server allows you to easily configure your agent's prompt, select voices/
 
 Before starting the voice agent, let's make sure it has the keys it needs to run.
 
-1. On the `http://localhost:8000` dashboard, go to the **🔑 API Credentials** tab.
+1. On the `http://64.227.157.91:8000` dashboard, go to the **🔑 API Credentials** tab.
 2. Ensure at least the following four essential keys are filled in (if they aren't already in your `.env` file):
    - `LiveKit URL`
    - `LiveKit API Key`

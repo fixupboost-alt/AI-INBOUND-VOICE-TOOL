@@ -90,8 +90,8 @@ def get_live_config(phone_number: str | None = None):
     return {
         "agent_instructions":       config.get("agent_instructions", ""),
         "stt_min_endpointing_delay":config.get("stt_min_endpointing_delay", 0.05),
-        "llm_model":                config.get("llm_model", "gpt-4o-mini"),
-        "llm_provider":             config.get("llm_provider", "openai"),
+        "llm_model":                config.get("llm_model", "llama3-8b-8192"),
+        "llm_provider":             config.get("llm_provider", "groq"),
         "tts_voice":                config.get("tts_voice", "kavya"),
         "tts_language":             config.get("tts_language", "hi-IN"),
         "tts_provider":             config.get("tts_provider", "sarvam"),
@@ -444,12 +444,12 @@ async def entrypoint(ctx: JobContext):
     if llm_provider == "groq":
         _groq_api_key = os.environ.get("GROQ_API_KEY", "")
         agent_llm = openai.LLM(
-            model=llm_model or "llama-3.3-70b-versatile",
+            model=llm_model or "llama3-8b-8192",
             base_url="https://api.groq.com/openai/v1",
             api_key=_groq_api_key,
             max_completion_tokens=120,
         )
-        logger.info(f"[LLM] Using Groq (OpenAI-compatible): {llm_model}")
+        logger.info(f"[LLM] Using Groq (OpenAI-compatible): {llm_model or 'llama3-8b-8192'}")
 
         # ── Groq schema compatibility patch ───────────────────────────────
         # Groq rejects tools with 'required': [] when properties is empty,

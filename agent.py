@@ -329,12 +329,22 @@ class OutboundAssistant(Agent):
             "first_line",
             self._first_line or (
                 "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. "
-                "Hmm, may I ask what kind of business you run?"
+                "May I ask what kind of business you run?"
             )
         )
-        await self.session.generate_reply(
-            instructions=f"Say exactly this phrase: '{greeting}'"
-        )
+        logger.info(f"[GREETING] Saying: {greeting[:80]}...")
+        try:
+            # Use say() directly — bypasses LLM, goes straight to TTS.
+            # Much more reliable than generate_reply() for a fixed opening line.
+            await self.session.say(greeting, allow_interruptions=True)
+        except Exception as e:
+            logger.error(f"[GREETING] say() failed: {e} — falling back to generate_reply")
+            try:
+                await self.session.generate_reply(
+                    instructions=f"Say exactly this phrase: '{greeting}'"
+                )
+            except Exception as e2:
+                logger.error(f"[GREETING] generate_reply also failed: {e2}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -444,12 +454,12 @@ async def entrypoint(ctx: JobContext):
     if llm_provider == "groq":
         _groq_api_key = os.environ.get("GROQ_API_KEY", "")
         agent_llm = openai.LLM(
-            model=llm_model or "llama3-8b-8192",
+            model=llm_model or "llama-3.1-8b-instant",
             base_url="https://api.groq.com/openai/v1",
             api_key=_groq_api_key,
-            max_completion_tokens=120,
+            max_completion_tokens=200,
         )
-        logger.info(f"[LLM] Using Groq (OpenAI-compatible): {llm_model or 'llama3-8b-8192'}")
+        logger.info(f"[LLM] Using Groq: {llm_model or 'llama-3.1-8b-instant'}")
 
         # ── Groq schema compatibility patch ───────────────────────────────
         # Groq rejects tools with 'required': [] when properties is empty,

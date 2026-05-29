@@ -623,19 +623,19 @@ async def get_dashboard():
   </div>
   <div class="sidebar-nav">
     <div class="nav-section">Overview</div>
-    <div class="nav-item active" onclick="goTo('dashboard', this)"><span class="icon">📊</span> Dashboard</div>
-    <div class="nav-item" onclick="goTo('calendar', this); loadCalendar();"><span class="icon">📅</span> Calendar</div>
+    <div class="nav-item" data-page="dashboard"><span class="icon">&#x1F4CA;</span> Dashboard</div>
+    <div class="nav-item" data-page="calendar"><span class="icon">&#x1F4C5;</span> Calendar</div>
     <div class="nav-section" style="margin-top:12px;">Configuration</div>
-    <div class="nav-item" onclick="goTo('agent', this)"><span class="icon">🤖</span> Agent Settings</div>
-    <div class="nav-item" onclick="goTo('models', this)"><span class="icon">🎙️</span> Models & Voice</div>
-    <div class="nav-item" onclick="goTo('credentials', this)"><span class="icon">🔑</span> API Credentials</div>
+    <div class="nav-item" data-page="agent"><span class="icon">&#x1F916;</span> Agent Settings</div>
+    <div class="nav-item" data-page="models"><span class="icon">&#x1F399;&#xFE0F;</span> Models &amp; Voice</div>
+    <div class="nav-item" data-page="credentials"><span class="icon">&#x1F511;</span> API Credentials</div>
     <div class="nav-section" style="margin-top:12px;">Data</div>
-    <div class="nav-item" onclick="goTo('logs', this); loadLogs();"><span class="icon">📞</span> Call Logs</div>
-    <div class="nav-item" onclick="goTo('crm', this); loadCRM();"><span class="icon">👥</span> CRM Contacts</div>
+    <div class="nav-item" data-page="logs"><span class="icon">&#x1F4DE;</span> Call Logs</div>
+    <div class="nav-item" data-page="crm"><span class="icon">&#x1F465;</span> CRM Contacts</div>
     <div class="nav-section" style="margin-top:12px;">Calling</div>
-    <div class="nav-item" onclick="goTo('outbound', this)"><span class="icon">📲</span> Outbound Calls</div>
-    <div class="nav-item" onclick="goTo('languages', this); initLanguagePage();"><span class="icon">🌐</span> Language Presets</div>
-    <div class="nav-item" onclick="goTo('demo', this); initDemo();"><span class="icon">✨</span> Demo Link</div>
+    <div class="nav-item" data-page="outbound"><span class="icon">&#x1F4F2;</span> Outbound Calls</div>
+    <div class="nav-item" data-page="languages"><span class="icon">&#x1F310;</span> Language Presets</div>
+    <div class="nav-item" data-page="demo"><span class="icon">&#x2728;</span> Demo Link</div>
   </div>
   <div class="sidebar-footer">
     <span class="status-dot pulse"></span>Agent Online
@@ -974,37 +974,85 @@ async def get_dashboard():
 </div><!-- /main -->
 
 <script>
-// ── Navigation ──────────────────────────────────────────────────────────────
-function goTo(pageId, navEl) {{
-  // Hide ALL pages directly via style (bypasses any CSS issues)
-  document.querySelectorAll('.page').forEach(function(p) {{
-    p.style.display = 'none';
-    p.classList.remove('active');
-  }});
-  // Deactivate all nav items
-  document.querySelectorAll('.nav-item').forEach(function(n) {{
-    n.classList.remove('active');
-  }});
-  // Show only the target page
-  var target = document.getElementById('page-' + pageId);
-  if (target) {{
-    target.style.display = 'block';
-    target.classList.add('active');
+// ═══════════════════════════════════════════════════════════════════════════
+// NAVIGATION — bulletproof, zero inline onclick, try/catch isolated
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Map of page IDs to optional secondary loader functions
+var PAGE_LOADERS = {{
+  'calendar':  function() {{ if (typeof loadCalendar  === 'function') loadCalendar(); }},
+  'logs':      function() {{ if (typeof loadLogs      === 'function') loadLogs(); }},
+  'crm':       function() {{ if (typeof loadCRM        === 'function') loadCRM(); }},
+  'languages': function() {{ if (typeof initLanguagePage === 'function') initLanguagePage(); }},
+  'demo':      function() {{ if (typeof initDemo       === 'function') initDemo(); }},
+  'dashboard': function() {{ if (typeof loadDashboard  === 'function') loadDashboard(); }}
+}};
+
+function goTo(pageId) {{
+  try {{
+    // 1. Hide all pages via inline style (highest CSS specificity, never overridden)
+    var pages = document.querySelectorAll('.page');
+    for (var i = 0; i < pages.length; i++) {{
+      pages[i].style.display = 'none';
+      pages[i].classList.remove('active');
+    }}
+    // 2. Deactivate all sidebar nav items
+    var navItems = document.querySelectorAll('.nav-item');
+    for (var j = 0; j < navItems.length; j++) {{
+      navItems[j].classList.remove('active');
+    }}
+    // 3. Show target page
+    var target = document.getElementById('page-' + pageId);
+    if (target) {{
+      target.style.display = 'block';
+      target.classList.add('active');
+    }} else {{
+      console.warn('[NAV] Page not found: page-' + pageId);
+    }}
+    // 4. Highlight active nav item
+    var activeItem = document.querySelector('[data-page="' + pageId + '"]');
+    if (activeItem) activeItem.classList.add('active');
+    // 5. Scroll content area to top
+    var main = document.getElementById('main');
+    if (main) main.scrollTop = 0;
+    // 6. Run page-specific loader (isolated — cannot crash navigation)
+    try {{
+      if (PAGE_LOADERS[pageId]) PAGE_LOADERS[pageId]();
+    }} catch(loaderErr) {{
+      console.warn('[NAV] Loader error for ' + pageId + ':', loaderErr);
+    }}
+  }} catch(navErr) {{
+    console.error('[NAV] Critical error:', navErr);
   }}
-  // Mark nav item active
-  if (navEl) navEl.classList.add('active');
-  // Scroll back to top
-  var main = document.getElementById('main');
-  if (main) main.scrollTop = 0;
 }}
 
-// Set up page visibility on first load
 function initNav() {{
-  document.querySelectorAll('.page').forEach(function(p) {{
-    p.style.display = 'none';
-  }});
-  var dash = document.getElementById('page-dashboard');
-  if (dash) dash.style.display = 'block';
+  try {{
+    // Hide all pages
+    var pages = document.querySelectorAll('.page');
+    for (var i = 0; i < pages.length; i++) {{
+      pages[i].style.display = 'none';
+      pages[i].classList.remove('active');
+    }}
+    // Show dashboard by default
+    var dash = document.getElementById('page-dashboard');
+    if (dash) {{
+      dash.style.display = 'block';
+      dash.classList.add('active');
+    }}
+    // Set dashboard nav item active
+    var dashNav = document.querySelector('[data-page="dashboard"]');
+    if (dashNav) dashNav.classList.add('active');
+    // Attach click listeners to all nav items via data-page attribute
+    document.querySelectorAll('[data-page]').forEach(function(item) {{
+      item.addEventListener('click', function() {{
+        goTo(this.getAttribute('data-page'));
+      }});
+    }});
+    console.log('[NAV] Navigation initialized OK');
+  }} catch(e) {{
+    console.error('[NAV] initNav failed:', e);
+  }}
 }}
 
 // ── Stats & Dashboard ───────────────────────────────────────────────────────

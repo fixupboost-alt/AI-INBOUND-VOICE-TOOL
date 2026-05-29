@@ -6,22 +6,24 @@ from datetime import datetime
 
 logger = logging.getLogger("notify")
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
-TELEGRAM_URL       = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
 
 
 # ─── Telegram ──────────────────────────────────────────────────────────────────
 
 def send_telegram(message: str) -> bool:
-    """Fire a single POST to Telegram. Supports Markdown formatting."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    """Fire a single POST to Telegram. Reads token/chat_id at call time (not import time)."""
+    # Read lazily so env vars are always current (fixes Coolify deployment issue)
+    token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
         logger.warning("[TELEGRAM] Token or Chat ID not set — skipping.")
         return False
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         resp = requests.post(
-            TELEGRAM_URL,
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"},
+            url,
+            json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"},
             timeout=5,
         )
         resp.raise_for_status()

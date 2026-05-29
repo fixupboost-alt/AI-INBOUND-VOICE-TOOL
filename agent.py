@@ -68,7 +68,9 @@ def is_rate_limited(phone: str) -> bool:
 
 # ── Config loader (#17 partial — per-client path awareness) ───────────────────
 def get_live_config(phone_number: str | None = None):
-    """Load config — tries per-client file first, then default config.json."""
+    """Load config — tries per-client file first, then default config.json,
+    then falls back to environment variables (required for Coolify/Docker where
+    config.json is gitignored and not present in the container)."""
     config = {}
     paths = []
     AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -87,18 +89,48 @@ def get_live_config(phone_number: str | None = None):
             except Exception as e:
                 logger.error(f"[CONFIG] Failed to read {path}: {e}")
 
+    if not config:
+        logger.warning("[CONFIG] No config.json found — using environment variables only.")
+
+    # ── Environment variable fallbacks (cloud/Coolify deployment) ────────────
+    # Each setting: config.json value wins → env var fallback → hardcoded default
+    def env(key, default=""):
+        return os.environ.get(key, default)
+
     return {
-        "agent_instructions":       config.get("agent_instructions", ""),
-        "stt_min_endpointing_delay":config.get("stt_min_endpointing_delay", 0.05),
-        "llm_model":                config.get("llm_model", "llama3-8b-8192"),
-        "llm_provider":             config.get("llm_provider", "groq"),
-        "tts_voice":                config.get("tts_voice", "kavya"),
-        "tts_language":             config.get("tts_language", "hi-IN"),
-        "tts_provider":             config.get("tts_provider", "sarvam"),
-        "stt_provider":             config.get("stt_provider", "sarvam"),
-        "stt_language":             config.get("stt_language", "unknown"),
-        "lang_preset":              config.get("lang_preset", "multilingual"),
-        "max_turns":                config.get("max_turns", 25),
+        "agent_instructions":        config.get("agent_instructions",
+                                        env("AGENT_INSTRUCTIONS",
+                                            "You are Aryan, a sharp multilingual AI sales consultant at RapidX AI. "
+                                            "Book discovery calls and demos. Keep responses to 1-2 short sentences. "
+                                            "Sound human, natural. Detect caller's language and respond in it.")),
+        "first_line":                config.get("first_line",
+                                        env("FIRST_LINE",
+                                            "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. "
+                                            "May I ask what kind of business you run?")),
+        "stt_min_endpointing_delay": config.get("stt_min_endpointing_delay",
+                                        float(env("STT_ENDPOINTING_DELAY", "0.4"))),
+        "llm_model":                 config.get("llm_model",          env("LLM_MODEL", "llama-3.3-70b-versatile")),
+        "llm_provider":              config.get("llm_provider",       env("LLM_PROVIDER", "groq")),
+        "tts_voice":                 config.get("tts_voice",          env("TTS_VOICE", "kavya")),
+        "tts_language":              config.get("tts_language",       env("TTS_LANGUAGE", "hi-IN")),
+        "tts_provider":              config.get("tts_provider",       env("TTS_PROVIDER", "sarvam")),
+        "stt_provider":              config.get("stt_provider",       env("STT_PROVIDER", "sarvam")),
+        "stt_language":              config.get("stt_language",       env("STT_LANGUAGE", "unknown")),
+        "lang_preset":               config.get("lang_preset",        env("LANG_PRESET", "multilingual")),
+        "max_turns":                 config.get("max_turns",          int(env("MAX_TURNS", "25"))),
+        # API keys from env if not in config
+        "livekit_url":               config.get("livekit_url",        env("LIVEKIT_URL")),
+        "livekit_api_key":           config.get("livekit_api_key",    env("LIVEKIT_API_KEY")),
+        "livekit_api_secret":        config.get("livekit_api_secret", env("LIVEKIT_API_SECRET")),
+        "openai_api_key":            config.get("openai_api_key",     env("OPENAI_API_KEY")),
+        "groq_api_key":              config.get("groq_api_key",       env("GROQ_API_KEY")),
+        "sarvam_api_key":            config.get("sarvam_api_key",     env("SARVAM_API_KEY")),
+        "cal_api_key":               config.get("cal_api_key",        env("CAL_API_KEY")),
+        "cal_event_type_id":         config.get("cal_event_type_id",  env("CAL_EVENT_TYPE_ID")),
+        "telegram_bot_token":        config.get("telegram_bot_token", env("TELEGRAM_BOT_TOKEN")),
+        "telegram_chat_id":          config.get("telegram_chat_id",   env("TELEGRAM_CHAT_ID")),
+        "supabase_url":              config.get("supabase_url",       env("SUPABASE_URL")),
+        "supabase_key":              config.get("supabase_key",       env("SUPABASE_KEY")),
         **config,
     }
 
@@ -454,12 +486,12 @@ async def entrypoint(ctx: JobContext):
     if llm_provider == "groq":
         _groq_api_key = os.environ.get("GROQ_API_KEY", "")
         agent_llm = openai.LLM(
-            model=llm_model or "llama-3.1-8b-instant",
+            model=llm_model or "llama-3.3-70b-versatile",
             base_url="https://api.groq.com/openai/v1",
             api_key=_groq_api_key,
             max_completion_tokens=200,
         )
-        logger.info(f"[LLM] Using Groq: {llm_model or 'llama-3.1-8b-instant'}")
+        logger.info(f"[LLM] Using Groq: {llm_model or 'llama-3.3-70b-versatile'}")
 
         # ── Groq schema compatibility patch ───────────────────────────────
         # Groq rejects tools with 'required': [] when properties is empty,

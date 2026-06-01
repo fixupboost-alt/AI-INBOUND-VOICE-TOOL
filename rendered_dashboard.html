@@ -206,19 +206,19 @@
   </div>
   <div class="sidebar-nav">
     <div class="nav-section">Overview</div>
-    <div class="nav-item active" onclick="goTo('dashboard', this)"><span class="icon">📊</span> Dashboard</div>
-    <div class="nav-item" onclick="goTo('calendar', this); loadCalendar();"><span class="icon">📅</span> Calendar</div>
+    <div class="nav-item active" data-page="dashboard"><span class="icon">📊</span> Dashboard</div>
+    <div class="nav-item" data-page="calendar"><span class="icon">📅</span> Calendar</div>
     <div class="nav-section" style="margin-top:12px;">Configuration</div>
-    <div class="nav-item" onclick="goTo('agent', this)"><span class="icon">🤖</span> Agent Settings</div>
-    <div class="nav-item" onclick="goTo('models', this)"><span class="icon">🎙️</span> Models & Voice</div>
-    <div class="nav-item" onclick="goTo('credentials', this)"><span class="icon">🔑</span> API Credentials</div>
+    <div class="nav-item" data-page="agent"><span class="icon">🤖</span> Agent Settings</div>
+    <div class="nav-item" data-page="models"><span class="icon">🎙️</span> Models & Voice</div>
+    <div class="nav-item" data-page="credentials"><span class="icon">🔑</span> API Credentials</div>
     <div class="nav-section" style="margin-top:12px;">Data</div>
-    <div class="nav-item" onclick="goTo('logs', this); loadLogs();"><span class="icon">📞</span> Call Logs</div>
-    <div class="nav-item" onclick="goTo('crm', this); loadCRM();"><span class="icon">👥</span> CRM Contacts</div>
+    <div class="nav-item" data-page="logs"><span class="icon">📞</span> Call Logs</div>
+    <div class="nav-item" data-page="crm"><span class="icon">👥</span> CRM Contacts</div>
     <div class="nav-section" style="margin-top:12px;">Calling</div>
-    <div class="nav-item" onclick="goTo('outbound', this)"><span class="icon">📲</span> Outbound Calls</div>
-    <div class="nav-item" onclick="goTo('languages', this); initLanguagePage();"><span class="icon">🌐</span> Language Presets</div>
-    <div class="nav-item" onclick="goTo('demo', this); initDemo();"><span class="icon">✨</span> Demo Link</div>
+    <div class="nav-item" data-page="outbound"><span class="icon">📲</span> Outbound Calls</div>
+    <div class="nav-item" data-page="languages"><span class="icon">🌐</span> Language Presets</div>
+    <div class="nav-item" data-page="demo"><span class="icon">✨</span> Demo Link</div>
   </div>
   <div class="sidebar-footer">
     <span class="status-dot pulse"></span>Agent Online
@@ -241,7 +241,7 @@
     <div class="section-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <div class="section-title" style="border:none;padding:0;margin:0;">Recent Calls</div>
-        <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">↻ Refresh</button>
+        <button class="btn btn-ghost btn-sm" id="btn-refresh-dash">↻ Refresh</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -259,9 +259,9 @@
     </div>
     <div class="section-card">
       <div class="cal-header">
-        <button class="btn btn-ghost btn-sm" onclick="changeMonth(-1)">← Prev</button>
+        <button class="btn btn-ghost btn-sm" id="cal-prev-btn">← Prev</button>
         <div style="font-size:16px;font-weight:700;" id="cal-month-label">Month Year</div>
-        <button class="btn btn-ghost btn-sm" onclick="changeMonth(1)">Next →</button>
+        <button class="btn btn-ghost btn-sm" id="cal-next-btn">Next →</button>
       </div>
       <div class="cal-grid" id="cal-grid"></div>
       <div class="day-panel" id="day-panel">
@@ -302,7 +302,7 @@
     </div>
     <div class="save-bar">
       <span class="save-status" id="save-status-agent">✅ Saved!</span>
-      <button class="btn btn-primary" onclick="saveConfig('agent')">💾 Save Agent Settings</button>
+      <button class="btn btn-primary" id="btn-save-agent">💾 Save Agent Settings</button>
     </div>
   </div>
 
@@ -364,7 +364,7 @@
     </div>
     <div class="save-bar">
       <span class="save-status" id="save-status-models">✅ Saved!</span>
-      <button class="btn btn-primary" onclick="saveConfig('models')">💾 Save Model Settings</button>
+      <button class="btn btn-primary" id="btn-save-models">💾 Save Model Settings</button>
     </div>
   </div>
 
@@ -402,7 +402,7 @@
     </div>
     <div class="save-bar">
       <span class="save-status" id="save-status-credentials">✅ Saved!</span>
-      <button class="btn btn-primary" onclick="saveConfig('credentials')">💾 Save Credentials</button>
+      <button class="btn btn-primary" id="btn-save-credentials">💾 Save Credentials</button>
     </div>
   </div>
 
@@ -414,7 +414,7 @@
     <div class="section-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <div class="section-title" style="margin:0;">All Contacts</div>
-        <button class="btn btn-ghost btn-sm" onclick="loadCRM()">↻ Refresh</button>
+        <button class="btn btn-ghost btn-sm" id="btn-refresh-crm">↻ Refresh</button>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -469,7 +469,7 @@
           <input type="text" id="call-single-num" placeholder="+91XXXXXXXXXX" style="font-family:monospace;">
           <div class="hint">Must start with + and country code e.g. +91</div>
         </div>
-        <button class="btn btn-primary" onclick="makeSingleCall()" style="width:100%;">📞 Call Now</button>
+        <button class="btn btn-primary" id="btn-call-single" style="width:100%;">📞 Call Now</button>
         <div id="single-call-status" style="margin-top:12px;font-size:13px;"></div>
       </div>
       <div class="section-card">
@@ -479,7 +479,7 @@
           <textarea id="call-bulk-nums" rows="6" placeholder="+91XXXXXXXXXX&#10;+91YYYYYYYYYY&#10;+44ZZZZZZZZZ"></textarea>
           <div class="hint">Each line is a separate call dispatched simultaneously</div>
         </div>
-        <button class="btn btn-primary" onclick="makeBulkCall()" style="width:100%;">🚀 Call All Numbers</button>
+        <button class="btn btn-primary" id="btn-call-bulk" style="width:100%;">🚀 Call All Numbers</button>
         <div id="bulk-call-status" style="margin-top:12px;font-size:13px;"></div>
       </div>
     </div>
@@ -502,8 +502,8 @@
         Each session is valid for <strong style="color:var(--accent);">60 minutes</strong>.
       </p>
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-        <button class="btn btn-primary" onclick="generateDemo()">✨ Generate Demo Link</button>
-        <button class="btn btn-ghost" id="copy-demo-btn" onclick="copyDemoLink()" style="display:none;">📋 Copy Link</button>
+        <button class="btn btn-primary" id="btn-gen-demo">✨ Generate Demo Link</button>
+        <button class="btn btn-ghost" id="copy-demo-btn" style="display:none;">📋 Copy Link</button>
         <a id="open-demo-btn" href="#" target="_blank" class="btn btn-ghost" style="display:none;">↗ Open Demo</a>
       </div>
       <div id="demo-link-box" style="margin-top:16px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-family:monospace;font-size:13px;color:var(--accent);display:none;word-break:break-all;"></div>
@@ -523,7 +523,7 @@
           <div class="page-title">Call Logs</div>
           <div class="page-sub">Full history of all incoming calls and transcripts</div>
         </div>
-        <button class="btn btn-ghost" onclick="loadLogs()">↻ Refresh</button>
+        <button class="btn btn-ghost" id="btn-refresh-logs">↻ Refresh</button>
       </div>
     </div>
     <div class="table-wrap">
@@ -543,40 +543,48 @@
     </div>
   </div>
 
-</div><script>
-// Global object maps to keep tool configurations completely isolated from standard HTML attributes
-window.globalCalendarBookings = {};
+</div>
+
+<script>
+// Global runtime isolated storage
+window.dashboardCalendarData = {};
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 function goTo(pageId, navEl) {
-  // Hide ALL page view components safely
-  document.querySelectorAll('.page').forEach(function(p) {
+  document.querySelectorAll('.page').forEach(p => {
     p.style.display = 'none';
     p.classList.remove('active');
   });
-  // Deactivate structural active flags from sidebar
-  document.querySelectorAll('.nav-item').forEach(function(n) {
-    n.classList.remove('active');
-  });
-  // Safely mount target page container
-  var target = document.getElementById('page-' + pageId);
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  
+  const target = document.getElementById('page-' + pageId);
   if (target) {
     target.style.display = 'block';
     target.classList.add('active');
   }
-  // Append visual tracking states to the menu element
   if (navEl) navEl.classList.add('active');
-  // Return interface layout to header coordinates
-  var main = document.getElementById('main');
+  const main = document.getElementById('main');
   if (main) main.scrollTop = 0;
+
+  // Run contextual triggers smoothly
+  if (pageId === 'calendar') loadCalendar();
+  if (pageId === 'logs') loadLogs();
+  if (pageId === 'crm') loadCRM();
+  if (pageId === 'languages') initLanguagePage();
 }
 
 function initNav() {
-  document.querySelectorAll('.page').forEach(function(p) {
-    p.style.display = 'none';
-  });
-  var dash = document.getElementById('page-dashboard');
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  const dash = document.getElementById('page-dashboard');
   if (dash) dash.style.display = 'block';
+  
+  // Attach event listeners explicitly to decouple from HTML compilation variables
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', function() {
+      const pageAttr = this.getAttribute('data-page');
+      if (pageAttr) goTo(pageAttr, this);
+    });
+  });
 }
 
 // ── Stats & Dashboard ───────────────────────────────────────────────────────
@@ -664,19 +672,16 @@ function renderCalendar() {
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const today = new Date();
 
-  // Reset local container tracking values before compilation loop maps definitions
-  window.globalCalendarBookings = {};
-
+  window.dashboardCalendarData = {};
   allBookings.forEach(b => {
     const d = b.created_at ? b.created_at.slice(0,10) : null;
     if (d) { 
-      window.globalCalendarBookings[d] = window.globalCalendarBookings[d] || []; 
-      window.globalCalendarBookings[d].push(b); 
+      window.dashboardCalendarData[d] = window.dashboardCalendarData[d] || []; 
+      window.dashboardCalendarData[d].push(b); 
     }
   });
 
   let html = days.map(d => `<div class="cal-day-name">${d}</div>`).join('');
-
   const first = new Date(calYear, calMonth, 1);
   const last = new Date(calYear, calMonth + 1, 0);
   const startPad = first.getDay();
@@ -688,11 +693,10 @@ function renderCalendar() {
 
   for (let day = 1; day <= last.getDate(); day++) {
     const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const bks = window.globalCalendarBookings[dateStr] || [];
+    const bks = window.dashboardCalendarData[dateStr] || [];
     const isToday = today.getFullYear()===calYear && today.getMonth()===calMonth && today.getDate()===day;
     
-    // Clean, quote-clash immune function execution assignment structure
-    html += `<div class="cal-cell${isToday?' today':''}" onclick="showDay('${dateStr}')">
+    html += `<div class="cal-cell${isToday?' today':''}" data-date="${dateStr}">
       <div class="cal-num">${day}</div>
       ${bks.length ? `<div class="cal-dot"></div><div class="cal-booking-count">${bks.length} booking${bks.length>1?'s':''}</div>` : ''}
     </div>`;
@@ -705,10 +709,18 @@ function renderCalendar() {
 
   grid.innerHTML = html;
   document.getElementById('day-panel').classList.remove('show');
+
+  // Explicit loop assignment prevents any quote clashing within the HTML structure
+  grid.querySelectorAll('.cal-cell:not(.other-month)').forEach(cell => {
+    cell.addEventListener('click', function() {
+      const cellDate = this.getAttribute('data-date');
+      if (cellDate) showDay(cellDate);
+    });
+  });
 }
 
 function showDay(dateStr) {
-  const bookings = window.globalCalendarBookings[dateStr] || [];
+  const bookings = window.dashboardCalendarData[dateStr] || [];
   const panel = document.getElementById('day-panel');
   if (panel) {
     panel.classList.add('show');
@@ -759,14 +771,12 @@ async function loadCRM() {
       return;
     }
     tbody.innerHTML = contacts.map(c => `
-      <tr style="border-bottom:1px solid var(--border);transition:background 0.12s;" onmouseover="this.style.background='rgba(255,255,255,0.025)'" onmouseout="this.style.background=''">
+      <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:14px 16px;font-weight:600;">${c.caller_name || '<span style="color:var(--muted);font-weight:400;">Unknown</span>'}</td>
         <td style="padding:14px 16px;font-family:monospace;font-size:13px;">${c.phone_number || '—'}</td>
         <td style="padding:14px 16px;text-align:center;"><span style="background:rgba(108,99,255,0.12);color:var(--accent);padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${c.total_calls}</span></td>
         <td style="padding:14px 16px;color:var(--muted);font-size:12px;">${c.last_seen ? new Date(c.last_seen).toLocaleString('en-IN') : '—'}</td>
-        <td style="padding:14px 16px;">${c.is_booked
-          ? '<span class="badge badge-green">✅ Booked</span>'
-          : '<span class="badge badge-gray">📵 No booking</span>'}</td>
+        <td style="padding:14px 16px;">${c.is_booked ? '<span class="badge badge-green">✅ Booked</span>' : '<span class="badge badge-gray">📵 No booking</span>'}</td>
       </tr>`).join('');
   } catch(e) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#ef4444;">Error loading contacts. Check Supabase credentials.</td></tr>';
@@ -844,17 +854,23 @@ function renderLangGrid() {
   const grid = document.getElementById('lang-grid');
   if (!grid) return;
   grid.innerHTML = Object.entries(LANG_PRESETS).map(([id, p]) => `
-    <div onclick="selectLangPreset('${id}')" style="
+    <div class="lang-card-item" data-lang-id="${id}" style="
       background:${id===currentLangPreset ? 'rgba(108,99,255,0.15)' : 'var(--bg)'};
       border:2px solid ${id===currentLangPreset ? p.color : 'var(--border)'};
       border-radius:12px;padding:18px;cursor:pointer;transition:all 0.15s;
       ${id===currentLangPreset ? 'box-shadow:0 0 16px rgba(108,99,255,0.2)' : ''}
-    " onmouseover="this.style.borderColor='${p.color}'" onmouseout="this.style.borderColor='${id===currentLangPreset?p.color:'var(--border)}'">
+    ">
       <div style="font-size:28px;margin-bottom:8px;">${p.flag}</div>
       <div style="font-weight:700;font-size:14px;color:${id===currentLangPreset?p.color:'var(--text)'}">${p.label}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:3px;">${p.sub}</div>
       ${id===currentLangPreset ? '<div style="font-size:10px;color:#22c55e;margin-top:6px;font-weight:600;">✓ ACTIVE</div>' : ''}
     </div>`).join('');
+
+  grid.querySelectorAll('.lang-card-item').forEach(card => {
+    card.addEventListener('click', function() {
+      selectLangPreset(this.getAttribute('data-lang-id'));
+    });
+  });
 }
 
 async function selectLangPreset(id) {
@@ -886,7 +902,7 @@ async function makeSingleCall() {
   el.style.color = 'var(--muted)';
   try {
     const res = await fetch('/api/call/single', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers={'Content-Type':'application/json'},
       body: JSON.stringify({phone})
     }).then(r=>r.json());
     if (res.status === 'ok') {
@@ -909,7 +925,7 @@ async function makeBulkCall() {
   el.textContent = '⏳ Dispatching all numbers...';
   try {
     const res = await fetch('/api/call/bulk', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers={'Content-Type':'application/json'},
       body: JSON.stringify({numbers: nums})
     }).then(r=>r.json());
     const results = res.results || [];
@@ -929,8 +945,6 @@ async function makeBulkCall() {
 
 // ── Demo Link ─────────────────────────────────────────────────────────────────
 let demoUrl = '';
-function initDemo() {}
-
 async function generateDemo() {
   const statusEl = document.getElementById('demo-status');
   statusEl.textContent = '⏳ Generating session...';
@@ -987,15 +1001,26 @@ async function loadConfig() {
   } catch(e) { console.warn('Could not load config:', e); }
 }
 
-// Check for broken sandboxed local execution origins
-if (window.location.protocol === 'file:') {
-  alert("⚠️ Notice: You are viewing this file locally. You must open it via your cloud URL (http://64.227.157.91:8080) for data endpoints to load.");
-}
+// ── Bind Action Buttons ──────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", function() {
+  initNav();
+  loadDashboard();
+  loadConfig();
 
-// ── Boot ────────────────────────────────────────────────────────────────────
-initNav();
-loadDashboard();
-loadConfig();
+  // Attach explicit listeners to action components to safeguard runtime compilation
+  document.getElementById('btn-refresh-dash')?.addEventListener('click', loadDashboard);
+  document.getElementById('btn-refresh-logs')?.addEventListener('click', loadLogs);
+  document.getElementById('btn-refresh-crm')?.addEventListener('click', loadCRM);
+  document.getElementById('cal-prev-btn')?.addEventListener('click', () => changeMonth(-1));
+  document.getElementById('cal-next-btn')?.addEventListener('click', () => changeMonth(1));
+  document.getElementById('btn-save-agent')?.addEventListener('click', () => saveConfig('agent'));
+  document.getElementById('btn-save-models')?.addEventListener('click', () => saveConfig('models'));
+  document.getElementById('btn-save-credentials')?.addEventListener('click', () => saveConfig('credentials'));
+  document.getElementById('btn-call-single')?.addEventListener('click', makeSingleCall);
+  document.getElementById('btn-call-bulk')?.addEventListener('click', makeBulkCall);
+  document.getElementById('btn-gen-demo')?.addEventListener('click', generateDemo);
+  document.getElementById('copy-demo-btn')?.addEventListener('click', copyDemoLink);
+});
 </script>
 </body>
 </html>

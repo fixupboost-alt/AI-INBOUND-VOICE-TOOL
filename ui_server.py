@@ -26,6 +26,7 @@ def read_config():
         "first_line": get_val("first_line", "FIRST_LINE", "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. Hmm, may I ask what kind of business you run?"),
         "agent_instructions": get_val("agent_instructions", "AGENT_INSTRUCTIONS", ""),
         "stt_min_endpointing_delay": float(get_val("stt_min_endpointing_delay", "STT_MIN_ENDPOINTING_DELAY", 0.6)),
+        "llm_provider": get_val("llm_provider", "LLM_PROVIDER", "openai"),
         "llm_model": get_val("llm_model", "LLM_MODEL", "gpt-4o-mini"),
         "tts_voice": get_val("tts_voice", "TTS_VOICE", "kavya"),
         "tts_language": get_val("tts_language", "TTS_LANGUAGE", "hi-IN"),
@@ -190,7 +191,6 @@ async def get_demo_page():
 def health_check():
     return {"status": "ok", "service": "rapidx-ai-voice-agent"}
 
-# ── Serves the Clean HTML file directly from server memory ────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard():
     html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rendered_dashboard.html")

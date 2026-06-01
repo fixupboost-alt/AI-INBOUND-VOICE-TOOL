@@ -211,12 +211,23 @@
   <div id="page-models" class="page">
     <div class="page-header"><div class="page-title">Models & Voice</div></div>
     <div class="section-card">
-      <div class="form-group" style="max-width:300px;">
-        <label>LLM Brain Model</label>
-        <select id="llm_model">
-          <option value="gpt-4o-mini">gpt-4o-mini (Recommended)</option>
-          <option value="gpt-4o">gpt-4o</option>
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label>AI Brain Provider</label>
+          <select id="llm_provider">
+            <option value="openai">OpenAI (Frontier Cloud)</option>
+            <option value="groq">Groq (Ultra-Fast LPU Inference)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>LLM Brain Model</label>
+          <select id="llm_model">
+            <option value="gpt-4o-mini">gpt-4o-mini (OpenAI Default)</option>
+            <option value="gpt-4o">gpt-4o (OpenAI Resolution)</option>
+            <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Groq Smart)</option>
+            <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Groq Ultra-Fast)</option>
+          </select>
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -303,7 +314,6 @@
 <script>
 window.dashboardCalendarData = {};
 
-// ── Native Isolated Navigation ──────────────────────────────────────────────
 function goTo(pageId, navEl) {
   document.querySelectorAll('.page').forEach(p => { p.style.display = 'none'; p.classList.remove('active'); });
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -330,7 +340,6 @@ function initNav() {
   });
 }
 
-// ── Live Metric Database Fetch Loops ─────────────────────────────────────────
 async function loadDashboard() {
   try {
     const stats = await fetch('/api/stats').then(r => r.json());
@@ -396,7 +405,6 @@ async function loadCRM() {
   } catch(e) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#ef4444;">Pipeline connectivity exception.</td></tr>'; }
 }
 
-// ── Calendar Operations ──────────────────────────────────────────────────────
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 let allBookings = [];
@@ -475,7 +483,6 @@ function openDayModal(dateStr, bookings) {
 
 function closeDayModal() { document.getElementById('day-modal').classList.remove('open'); }
 
-// ── Configurations Sync ──────────────────────────────────────────────────────
 async function saveConfig(section) {
   const get = id => { const el = document.getElementById(id); return el ? el.value : null; };
   const payload = {};
@@ -483,7 +490,7 @@ async function saveConfig(section) {
   if (section === 'agent') {
     Object.assign(payload, { first_line: get('first_line'), agent_instructions: get('agent_instructions'), stt_min_endpointing_delay: parseFloat(get('stt_min_endpointing_delay') || 0.6) });
   } else if (section === 'models') {
-    Object.assign(payload, { llm_model: get('llm_model'), tts_voice: get('tts_voice'), tts_language: get('tts_language') });
+    Object.assign(payload, { llm_provider: get('llm_provider'), llm_model: get('llm_model'), tts_voice: get('tts_voice'), tts_language: get('tts_language') });
   } else if (section === 'credentials') {
     Object.assign(payload, {
       livekit_url: get('livekit_url'), sip_trunk_id: get('sip_trunk_id'), livekit_api_key: get('livekit_api_key'), livekit_api_secret: get('livekit_api_secret'),
@@ -501,9 +508,18 @@ async function loadConfig() {
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
     const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    const setSelect = (id, val) => {
+      const el = document.getElementById(id);
+      if (!el || !val) return;
+      for (const opt of el.options) { if (opt.value === String(val)) { opt.selected = true; break; } }
+    };
     set('first_line', cfg.first_line);
     set('agent_instructions', cfg.agent_instructions);
     set('stt_min_endpointing_delay', cfg.stt_min_endpointing_delay);
+    setSelect('llm_provider', cfg.llm_provider);
+    setSelect('llm_model', cfg.llm_model);
+    setSelect('tts_voice', cfg.tts_voice);
+    setSelect('tts_language', cfg.tts_language);
     set('livekit_url', cfg.livekit_url); set('sip_trunk_id', cfg.sip_trunk_id);
     set('livekit_api_key', cfg.livekit_api_key); set('livekit_api_secret', cfg.livekit_api_secret);
     set('openai_api_key', cfg.openai_api_key); set('sarvam_api_key', cfg.sarvam_api_key);
@@ -524,7 +540,6 @@ async function makeSingleCall() {
   } catch(e) { el.textContent = '❌ Stream initialization exception.'; }
 }
 
-// ── DOM Mounted Execution Hook ────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", function() {
   initNav();
   loadDashboard();

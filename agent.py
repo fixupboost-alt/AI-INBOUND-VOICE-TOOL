@@ -336,8 +336,25 @@ class AgentTools(llm.ToolContext):
 
 class OutboundAssistant(Agent):
 
-    def __init__(self, agent_tools: AgentTools, first_line: str = "", live_config: dict | None = None):
-        tools = llm.find_function_tools(agent_tools)
+    # Tools that work reliably with Groq's stricter schema requirements
+    # (simple params, no complex nested types, no empty required arrays)
+    GROQ_SAFE_TOOL_NAMES = {"transfer_call", "end_call", "get_business_hours"}
+
+    def __init__(self, agent_tools: AgentTools, first_line: str = "",
+                 live_config: dict | None = None, llm_provider: str = "groq"):
+        # For Groq: only include tools with simple schemas to avoid
+        # 'Failed to call a function. Please adjust your prompt.' errors.
+        # save_booking_intent / check_availability have complex Annotated types
+        # that Groq rejects. They are excluded when provider == 'groq'.
+        all_tools = llm.find_function_tools(agent_tools)
+        if llm_provider == "groq":
+            tools = [t for t in all_tools if getattr(t, 'name', None) in self.GROQ_SAFE_TOOL_NAMES]
+            logger.info(f"[TOOLS] Groq mode — loaded {len(tools)}/{len(all_tools)} safe tools: "
+                        f"{[getattr(t,'name','?') for t in tools]}")
+        else:
+            tools = all_tools
+            logger.info(f"[TOOLS] {llm_provider} mode — loaded all {len(tools)} tools")
+
         self._first_line  = first_line
         self._live_config = live_config or {}
         live_config_loaded = self._live_config
@@ -605,6 +622,7 @@ async def entrypoint(ctx: JobContext):
         agent_tools=agent_tools,
         first_line=live_config.get("first_line", ""),
         live_config=live_config,
+        llm_provider=llm_provider,   # controls which tools are loaded
     )
 
     # ── Build session (#3 noise cancellation attempted) ───────────────────
@@ -829,12 +847,13 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"[SHUTDOWN] Transcript read failed: {e}")
             transcript_text = "unavailable"
 
-        # Sentiment analysis (#14)
+        # Sentiment analysis (#14) — skipped if OPENAI_API_KEY not set
         sentiment = "unknown"
-        if transcript_text and transcript_text != "unavailable":
+        _openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if transcript_text and transcript_text != "unavailable" and _openai_key:
             try:
                 import openai as _oai
-                _client = _oai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+                _client = _oai.AsyncOpenAI(api_key=_openai_key)
                 resp = await _client.chat.completions.create(
                     model="gpt-4o-mini", max_tokens=5,
                     messages=[{"role":"user","content":
@@ -844,6 +863,12 @@ async def entrypoint(ctx: JobContext):
                 logger.info(f"[SENTIMENT] {sentiment}")
             except Exception as e:
                 logger.warning(f"[SENTIMENT] Failed: {e}")
+                sentiment = "unknown"
+        else:
+            if not _openai_key:
+                logger.info("[SENTIMENT] Skipped — OPENAI_API_KEY not set (non-critical)")
+            else:
+                logger.info("[SENTIMENT] Skipped — no transcript")
 
         # Cost estimation (#34)
         def estimate_cost(dur: int, chars: int) -> float:

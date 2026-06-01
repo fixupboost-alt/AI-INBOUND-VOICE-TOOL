@@ -97,16 +97,39 @@ async def api_get_transcript(log_id: str):
     except Exception as e:
         return PlainTextResponse(content=f"Error: {e}", status_code=500)
 
+# ── Smart Fallback Booking Aggregator ──────────────────────────────────────────
 @app.get("/api/bookings")
 async def api_get_bookings():
     config = read_config()
     os.environ["SUPABASE_URL"] = config.get("supabase_url", "")
     os.environ["SUPABASE_KEY"] = config.get("supabase_key", "")
     import db
+    
+    # Method 1: Try reading from standard explicit bookings source table
     try:
-        return db.fetch_bookings()
+        bookings = db.fetch_bookings()
+        if bookings and len(bookings) > 0:
+            return bookings
     except Exception as e:
-        logger.error(f"Error fetching bookings: {e}")
+        logger.warning(f"Dedicated bookings table read idle: {e}")
+        
+    # Method 2: Fallback scan through call_logs table for active booking tags
+    try:
+        logs = db.fetch_call_logs(limit=150)
+        extracted_appointments = []
+        for log in logs:
+            summary_text = log.get("summary", "") or ""
+            # If the log summary explicitly indicates a successful booking context
+            if "confirm" in summary_text.lower() or "booked" in summary_text.lower():
+                extracted_appointments.append({
+                    "id": log.get("id"),
+                    "phone_number": log.get("phone_number", "Unknown"),
+                    "created_at": log.get("created_at"),
+                    "summary": summary_text
+                })
+        return extracted_appointments
+    except Exception as fallback_err:
+        logger.error(f"Calendar extraction loop failed: {fallback_err}")
         return []
 
 @app.get("/api/stats")

@@ -82,7 +82,6 @@ async def api_get_transcript(log_id: str):
     config = read_config()
     os.environ["SUPABASE_URL"] = config.get("supabase_url", "")
     os.environ["SUPABASE_KEY"] = config.get("supabase_key", "")
-    import db
     try:
         from supabase import create_client
         supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
@@ -202,7 +201,7 @@ DEMO_PAGE_HTML = """<!DOCTYPE html>
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
-  <script script>
+  <script>
     let room;
     async function startCall() {
       document.getElementById('status').textContent = 'Connecting...';
@@ -295,4 +294,105 @@ async def api_call_bulk(request: Request):
                 lkapi.CreateAgentDispatchRequest(
                     agent_name="outbound-caller",
                     room=room_name,
-                    metadata=_json.dumps({"phone_number":
+                    metadata=_json.dumps({"phone_number": phone}),
+                )
+            )
+            await lk.aclose()
+            results.append({"phone": phone, "status": "ok", "dispatch_id": dispatch.id})
+            logger.info(f"Bulk outbound dispatched to {phone}: {dispatch.id}")
+        except Exception as e:
+            results.append({"phone": phone, "status": "error", "message": str(e)})
+    return {"results": results, "total": len(results)}
+
+@app.get("/api/demo-token")
+async def api_demo_token():
+    config = read_config()
+    try:
+        from livekit.api import AccessToken, VideoGrants
+        import time, random
+        room_name = f"demo-{random.randint(10000,99999)}"
+        api_key    = config.get("livekit_api_key") or os.environ.get("LIVEKIT_API_KEY","")
+        api_secret = config.get("livekit_api_secret") or os.environ.get("LIVEKIT_API_SECRET","")
+        livekit_url = config.get("livekit_url") or os.environ.get("LIVEKIT_URL","")
+
+        token = AccessToken(api_key, api_secret) \
+            .with_identity("demo-user") \
+            .with_name("Demo Caller") \
+            .with_grants(VideoGrants(room_join=True, room=room_name)) \
+            .with_ttl(3600) \
+            .to_jwt()
+
+        import json as _json
+        from livekit import api as lkapi
+        lk = lkapi.LiveKitAPI(url=livekit_url, api_key=api_key, api_secret=api_secret)
+        await lk.agent_dispatch.create_dispatch(
+            lkapi.CreateAgentDispatchRequest(
+                agent_name="outbound-caller",
+                room=room_name,
+                metadata=_json.dumps({"phone_number": "demo", "is_demo": True}),
+            )
+        )
+        await lk.aclose()
+        return {"token": token, "room": room_name, "url": livekit_url}
+    except Exception as e:
+        logger.error(f"Demo token error: {e}")
+        return {"error": str(e)}
+
+@app.get("/demo", response_class=HTMLResponse)
+async def get_demo_page():
+    return HTMLResponse(content=DEMO_PAGE_HTML)
+
+try:
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+    from fastapi.responses import Response as _Resp
+
+    def _get_or_create_metric(metric_class, name, description, **kwargs):
+        try:
+            return metric_class(name, description, **kwargs)
+        except ValueError:
+            return REGISTRY._names_to_collectors.get(name) or metric_class(name, description, **kwargs)
+
+    _voice_calls_total   = _get_or_create_metric(Counter,   "voice_calls_total",          "Total calls handled by the agent")
+    _voice_calls_booked  = _get_or_create_metric(Counter,   "voice_calls_booked_total",   "Calls that resulted in a booking")
+    _voice_call_duration = _get_or_create_metric(Histogram, "voice_call_duration_seconds", "Call duration in seconds",
+                                                 buckets=[10, 30, 60, 120, 300, 600, 1200])
+    _voice_calls_active  = _get_or_create_metric(Gauge,      "voice_calls_active",          "Currently active calls")
+
+    @app.get("/metrics", include_in_schema=False)
+    def metrics():
+        return _Resp(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    @app.post("/internal/record-call", include_in_schema=False)
+    async def record_call_metric(request: Request):
+        data = await request.json()
+        _voice_calls_total.inc()
+        if data.get("booked"):
+            _voice_calls_booked.inc()
+        if data.get("duration"):
+            _voice_call_duration.observe(data["duration"])
+        return {"ok": True}
+
+    logger.info("[METRICS] Prometheus metrics enabled at /metrics")
+
+except ImportError:
+    logger.warning("[METRICS] prometheus_client not installed — /metrics disabled")
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "ok",
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+        "service": "rapidx-ai-voice-agent",
+    }
+
+@app.get("/", response_class=HTMLResponse)
+async def get_dashboard():
+    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rendered_dashboard.html")
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Dashboard components compiling... Please try again.</h1>", status_code=503)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("ui_server:app", host="0.0.0.0", port=8000, reload=False)

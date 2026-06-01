@@ -170,7 +170,7 @@
     @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
     @keyframes slideUp { from { transform:translateY(20px); opacity:0 } to { transform:translateY(0); opacity:1 } }
 
-    /* ── Premium extras ── */
+    /* Premium extras */
     .stat-card { transition: transform 0.15s, box-shadow 0.15s; }
     .stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(108,99,255,0.12); }
     .stat-accent { color: var(--accent); }
@@ -180,7 +180,6 @@
 </head>
 <body>
 
-<!-- ── Day Detail Modal ── -->
 <div class="modal-overlay" id="day-modal" onclick="if(event.target===this)closeDayModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeDayModal()">✕</button>
@@ -190,7 +189,6 @@
   </div>
 </div>
 
-<!-- ── Sidebar ── -->
 <nav id="sidebar">
   <div class="sidebar-brand">
     <div class="logo">
@@ -227,10 +225,8 @@
   </div>
 </nav>
 
-<!-- ── Main Content ── -->
 <div id="main">
 
-  <!-- ── Dashboard ── -->
   <div id="page-dashboard" class="page active">
     <div class="page-header">
       <div class="page-title">Dashboard</div>
@@ -256,7 +252,6 @@
     </div>
   </div>
 
-  <!-- ── Calendar ── -->
   <div id="page-calendar" class="page">
     <div class="page-header">
       <div class="page-title">Booking Calendar</div>
@@ -276,7 +271,6 @@
     </div>
   </div>
 
-  <!-- ── Agent Settings ── -->
   <div id="page-agent" class="page">
     <div class="page-header">
       <div class="page-title">Agent Settings</div>
@@ -312,7 +306,6 @@
     </div>
   </div>
 
-  <!-- ── Models & Voice ── -->
   <div id="page-models" class="page">
     <div class="page-header">
       <div class="page-title">Models & Voice</div>
@@ -375,7 +368,6 @@
     </div>
   </div>
 
-  <!-- ── API Credentials ── -->
   <div id="page-credentials" class="page">
     <div class="page-header">
       <div class="page-title">API Credentials</div>
@@ -414,7 +406,6 @@
     </div>
   </div>
 
-  <!-- ── CRM Contacts Page -->
   <div id="page-crm" class="page">
     <div class="page-header">
       <div class="page-title">👥 CRM Contacts</div>
@@ -423,7 +414,7 @@
     <div class="section-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <div class="section-title" style="margin:0;">All Contacts</div>
-        <button class="btn btn-ghost btn-sm" onclick="loadCRM()">&#x21bb; Refresh</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadCRM()">↻ Refresh</button>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -444,7 +435,6 @@
     </div>
   </div>
 
-  <!-- ── Language Presets Page ── -->
   <div id="page-languages" class="page">
     <div class="page-header">
       <div class="page-title">🌐 Language Presets</div>
@@ -466,7 +456,6 @@
     </div>
   </div>
 
-  <!-- ── Outbound Calls Page ── -->
   <div id="page-outbound" class="page">
     <div class="page-header">
       <div class="page-title">📲 Outbound Calls</div>
@@ -500,7 +489,6 @@
     </div>
   </div>
 
-  <!-- ── Demo Link Page ── -->
   <div id="page-demo" class="page">
     <div class="page-header">
       <div class="page-title">✨ Demo Link</div>
@@ -528,7 +516,6 @@
     </div>
   </div>
 
-  <!-- ── Call Logs ── -->
   <div id="page-logs" class="page">
     <div class="page-header">
       <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -556,34 +543,34 @@
     </div>
   </div>
 
-</div><!-- /main -->
+</div><script>
+// Global object maps to keep tool configurations completely isolated from standard HTML attributes
+window.globalCalendarBookings = {};
 
-<script>
 // ── Navigation ──────────────────────────────────────────────────────────────
 function goTo(pageId, navEl) {
-  // Hide ALL pages directly via style (bypasses any CSS issues)
+  // Hide ALL page view components safely
   document.querySelectorAll('.page').forEach(function(p) {
     p.style.display = 'none';
     p.classList.remove('active');
   });
-  // Deactivate all nav items
+  // Deactivate structural active flags from sidebar
   document.querySelectorAll('.nav-item').forEach(function(n) {
     n.classList.remove('active');
   });
-  // Show only the target page
+  // Safely mount target page container
   var target = document.getElementById('page-' + pageId);
   if (target) {
     target.style.display = 'block';
     target.classList.add('active');
   }
-  // Mark nav item active
+  // Append visual tracking states to the menu element
   if (navEl) navEl.classList.add('active');
-  // Scroll back to top
+  // Return interface layout to header coordinates
   var main = document.getElementById('main');
   if (main) main.scrollTop = 0;
 }
 
-// Set up page visibility on first load
 function initNav() {
   document.querySelectorAll('.page').forEach(function(p) {
     p.style.display = 'none';
@@ -658,7 +645,7 @@ async function loadLogs() {
   }
 }
 
-// ── Calendar ────────────────────────────────────────────────────────────────
+// ── Calendar ──
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 let allBookings = [];
@@ -677,11 +664,15 @@ function renderCalendar() {
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const today = new Date();
 
-  // Build booking map by date string YYYY-MM-DD
-  const bookMap = {};
+  // Reset local container tracking values before compilation loop maps definitions
+  window.globalCalendarBookings = {};
+
   allBookings.forEach(b => {
     const d = b.created_at ? b.created_at.slice(0,10) : null;
-    if (d) { bookMap[d] = bookMap[d] || []; bookMap[d].push(b); }
+    if (d) { 
+      window.globalCalendarBookings[d] = window.globalCalendarBookings[d] || []; 
+      window.globalCalendarBookings[d].push(b); 
+    }
   });
 
   let html = days.map(d => `<div class="cal-day-name">${d}</div>`).join('');
@@ -690,7 +681,6 @@ function renderCalendar() {
   const last = new Date(calYear, calMonth + 1, 0);
   const startPad = first.getDay();
 
-  // Prev month padding
   for (let i = 0; i < startPad; i++) {
     const d = new Date(calYear, calMonth, -startPad + i + 1);
     html += `<div class="cal-cell other-month"><div class="cal-num">${d.getDate()}</div></div>`;
@@ -698,15 +688,16 @@ function renderCalendar() {
 
   for (let day = 1; day <= last.getDate(); day++) {
     const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const bks = bookMap[dateStr] || [];
+    const bks = window.globalCalendarBookings[dateStr] || [];
     const isToday = today.getFullYear()===calYear && today.getMonth()===calMonth && today.getDate()===day;
-    html += `<div class="cal-cell${isToday?' today':''}" onclick="showDay('${dateStr}', ${JSON.stringify(bks).replace(/'/g,"&apos;")})">
+    
+    // Clean, quote-clash immune function execution assignment structure
+    html += `<div class="cal-cell${isToday?' today':''}" onclick="showDay('${dateStr}')">
       <div class="cal-num">${day}</div>
       ${bks.length ? `<div class="cal-dot"></div><div class="cal-booking-count">${bks.length} booking${bks.length>1?'s':''}</div>` : ''}
     </div>`;
   }
 
-  // Next month padding
   const endPad = 6 - last.getDay();
   for (let i = 1; i <= endPad; i++) {
     html += `<div class="cal-cell other-month"><div class="cal-num">${i}</div></div>`;
@@ -716,14 +707,13 @@ function renderCalendar() {
   document.getElementById('day-panel').classList.remove('show');
 }
 
-function showDay(dateStr, bookings) {
-  // Update old inline panel too
+function showDay(dateStr) {
+  const bookings = window.globalCalendarBookings[dateStr] || [];
   const panel = document.getElementById('day-panel');
   if (panel) {
     panel.classList.add('show');
     document.getElementById('day-panel-title').textContent = `Bookings on ${dateStr}`;
   }
-  // Open modal overlay
   openDayModal(dateStr, bookings);
 }
 
@@ -786,7 +776,6 @@ async function loadCRM() {
 // ── Save Config ─────────────────────────────────────────────────────────────
 async function saveConfig(section) {
   const get = id => { const el = document.getElementById(id); return el ? el.value : null; };
-
   const payload = {};
 
   if (section === 'agent') {
@@ -826,19 +815,18 @@ async function saveConfig(section) {
   }
 }
 
-
 // ── Language Presets ─────────────────────────────────────────────────────────
 const LANG_PRESETS = {
-  hinglish:    { flag:'🇮🇳', label:'Hinglish',                sub:'Hindi + English mix',        color:'#6c63ff' },
-  hindi:       { flag:'🇮🇳', label:'Hindi',                   sub:'Pure Hindi',                  color:'#a855f7' },
-  english:     { flag:'🇬🇧', label:'English (India)',          sub:'Indian English',              color:'#3b82f6' },
-  tamil:       { flag:'🇮🇳', label:'Tamil',                   sub:'தமிழ்',                       color:'#f59e0b' },
-  telugu:      { flag:'🇮🇳', label:'Telugu',                  sub:'తెలుగు',                      color:'#10b981' },
-  gujarati:    { flag:'🇮🇳', label:'Gujarati',                sub:'ગુજરાતી',                     color:'#ef4444' },
-  bengali:     { flag:'🇮🇳', label:'Bengali',                 sub:'বাংলা',                       color:'#f97316' },
-  marathi:     { flag:'🇮🇳', label:'Marathi',                 sub:'मराठी',                       color:'#14b8a6' },
-  kannada:     { flag:'🇮🇳', label:'Kannada',                 sub:'ಕನ್ನಡ',                       color:'#8b5cf6' },
-  malayalam:   { flag:'🇮🇳', label:'Malayalam',               sub:'മലയാളം',                      color:'#ec4899' },
+  hinglish:     { flag:'🇮🇳', label:'Hinglish',               sub:'Hindi + English mix',        color:'#6c63ff' },
+  hindi:        { flag:'🇮🇳', label:'Hindi',                  sub:'Pure Hindi',                  color:'#a855f7' },
+  english:      { flag:'🇬🇧', label:'English (India)',          sub:'Indian English',              color:'#3b82f6' },
+  tamil:        { flag:'🇮🇳', label:'Tamil',                   sub:'தமிழ்',                        color:'#f59e0b' },
+  telugu:       { flag:'🇮🇳', label:'Telugu',                  sub:'తెలుగు',                       color:'#10b981' },
+  gujarati:     { flag:'🇮🇳', label:'Gujarati',                sub:'ગુજરાતી',                      color:'#ef4444' },
+  bengali:      { flag:'🇮🇳', label:'Bengali',                 sub:'বাংলা',                        color:'#f97316' },
+  marathi:      { flag:'🇮🇳', label:'Marathi',                 sub:'मराठी',                        color:'#14b8a6' },
+  kannada:      { flag:'🇮🇳', label:'Kannada',                 sub:'ಕನ್ನಡ',                        color:'#8b5cf6' },
+  malayalam:    { flag:'🇮🇳', label:'Malayalam',               sub:'മലയാളം',                       color:'#ec4899' },
   multilingual:{ flag:'🌍', label:'Multilingual (Auto)',       sub:"Detects caller's language",   color:'#22c55e' },
 };
 
@@ -874,9 +862,7 @@ async function selectLangPreset(id) {
   if (!p) return;
   currentLangPreset = id;
   renderLangGrid();
-  // Save lang_preset, tts_language, tts_voice to config
   try {
-    const cfg = await fetch('/api/config').then(r=>r.json());
     const voices = { hinglish:'kavya', hindi:'ritu', english:'dev', tamil:'priya', telugu:'kavya', gujarati:'rohan', bengali:'neha', marathi:'shubh', kannada:'rahul', malayalam:'ritu', multilingual:'kavya' };
     const langs  = { hinglish:'hi-IN', hindi:'hi-IN', english:'en-IN', tamil:'ta-IN', telugu:'te-IN', gujarati:'gu-IN', bengali:'bn-IN', marathi:'mr-IN', kannada:'kn-IN', malayalam:'ml-IN', multilingual:'hi-IN' };
     await fetch('/api/config', {
@@ -943,9 +929,8 @@ async function makeBulkCall() {
 
 // ── Demo Link ─────────────────────────────────────────────────────────────────
 let demoUrl = '';
-function initDemo() {
-  // no-op until user clicks generate
-}
+function initDemo() {}
+
 async function generateDemo() {
   const statusEl = document.getElementById('demo-status');
   statusEl.textContent = '⏳ Generating session...';
@@ -964,13 +949,14 @@ async function generateDemo() {
     statusEl.textContent = '❌ ' + e;
   }
 }
+
 function copyDemoLink() {
   navigator.clipboard.writeText(demoUrl);
   document.getElementById('copy-demo-btn').textContent = '✅ Copied!';
   setTimeout(()=>document.getElementById('copy-demo-btn').textContent='📋 Copy Link', 2000);
 }
 
-// ── Load Config into forms (safe JS assignment, no HTML injection) ───────────
+// ── Load Config into forms ───────────────────────────────────────────────────
 async function loadConfig() {
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
@@ -980,15 +966,12 @@ async function loadConfig() {
       if (!el || !val) return;
       for (const opt of el.options) { if (opt.value === String(val)) { opt.selected = true; break; } }
     };
-    // Agent Settings
     set('first_line', cfg.first_line);
     set('agent_instructions', cfg.agent_instructions);
     set('stt_min_endpointing_delay', cfg.stt_min_endpointing_delay);
-    // Models & Voice
     setSelect('llm_model', cfg.llm_model);
     setSelect('tts_voice', cfg.tts_voice);
     setSelect('tts_language', cfg.tts_language);
-    // API Credentials
     set('livekit_url', cfg.livekit_url);
     set('sip_trunk_id', cfg.sip_trunk_id);
     set('livekit_api_key', cfg.livekit_api_key);
@@ -1002,6 +985,11 @@ async function loadConfig() {
     set('supabase_url', cfg.supabase_url);
     set('supabase_key', cfg.supabase_key);
   } catch(e) { console.warn('Could not load config:', e); }
+}
+
+// Check for broken sandboxed local execution origins
+if (window.location.protocol === 'file:') {
+  alert("⚠️ Notice: You are viewing this file locally. You must open it via your cloud URL (http://64.227.157.91:8080) for data endpoints to load.");
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────

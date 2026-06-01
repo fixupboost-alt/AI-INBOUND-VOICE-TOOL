@@ -38,29 +38,51 @@ def get_available_slots(date_str: str) -> list:
 
 
 def _get_slots_calcom(date_str: str) -> list:
+    """Fetches real-time available availability tokens using Cal.com's modern v2 API."""
     creds = get_cal_creds()
     try:
         resp = requests.get(
-            f"{CAL_BASE}/slots",
-            headers={"Content-Type": "application/json"},
+            "https://api.cal.com/v2/slots",
+            headers={
+                "Authorization": f"Bearer {creds['api_key']}",
+                "cal-api-version": "2024-08-13",
+                "Content-Type": "application/json"
+            },
             params={
-                "apiKey":      creds["api_key"],
                 "eventTypeId": creds["event_id"],
-                "startTime":   f"{date_str}T00:00:00.000Z",
-                "endTime":     f"{date_str}T23:59:59.000Z",
+                "start": date_str,
+                "end": date_str,
             },
             timeout=8,
         )
         resp.raise_for_status()
-        raw_slots = resp.json().get("data", {}).get("slots", {}).get(date_str, [])
+        
+        # Safe extraction across dict or list variant outputs from the v2 schema
+        resp_data = resp.json().get("data", {})
+        slots_obj = resp_data.get("slots", {})
+        
+        raw_slots = []
+        if isinstance(slots_obj, dict):
+            raw_slots = slots_obj.get(date_str, [])
+        elif isinstance(slots_obj, list):
+            raw_slots = slots_obj
+
         slots = []
         for s in raw_slots:
-            dt = datetime.fromisoformat(s["time"])
-            slots.append({"time": s["time"], "label": dt.strftime("%-I:%M %p")})
-        logger.info(f"[CAL] {len(slots)} slots for {date_str}")
+            slot_time = s.get("time")
+            if slot_time:
+                # Clean format tracking string parameters cleanly
+                clean_time = slot_time.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(clean_time)
+                slots.append({
+                    "time": slot_time, 
+                    "label": dt.strftime("%I:%M %p").lstrip('0')
+                })
+                
+        logger.info(f"[CAL] {len(slots)} available v2 slots processed for {date_str}")
         return slots
     except Exception as e:
-        logger.error(f"[CAL] get_available_slots error: {e}")
+        logger.error(f"[CAL] get_available_slots v2 pipeline error: {e}")
         return []
 
 
@@ -89,7 +111,6 @@ def _get_slots_gcal(date_str: str, calendar_id: str, creds_file: str) -> list:
 
     busy_slots = result.get("calendars", {}).get(calendar_id, {}).get("busy", [])
 
-    # Generate free 30-min slots between 10:00 and 19:00 IST
     import pytz
     from datetime import timedelta
     ist = pytz.timezone("Asia/Kolkata")
@@ -110,7 +131,7 @@ def _get_slots_gcal(date_str: str, calendar_id: str, creds_file: str) -> list:
         if not is_busy:
             free_slots.append({
                 "time":  slot.isoformat(),
-                "label": slot.strftime("%-I:%M %p"),
+                "label": slot.strftime("%I:%M %p").lstrip('0'),
             })
         slot = slot_end
 

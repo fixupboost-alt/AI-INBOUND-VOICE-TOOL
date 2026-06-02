@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from dotenv import load_dotenv
@@ -97,7 +98,7 @@ async def api_get_transcript(log_id: str):
     except Exception as e:
         return PlainTextResponse(content=f"Error: {e}", status_code=500)
 
-# ── Smart Fallback Booking Aggregator ──────────────────────────────────────────
+# ── Smart Calendar Date-Extraction Scraper ────────────────────────────────────
 @app.get("/api/bookings")
 async def api_get_bookings():
     config = read_config()
@@ -105,7 +106,6 @@ async def api_get_bookings():
     os.environ["SUPABASE_KEY"] = config.get("supabase_key", "")
     import db
     
-    # Method 1: Try reading from standard explicit bookings source table
     try:
         bookings = db.fetch_bookings()
         if bookings and len(bookings) > 0:
@@ -113,18 +113,24 @@ async def api_get_bookings():
     except Exception as e:
         logger.warning(f"Dedicated bookings table read idle: {e}")
         
-    # Method 2: Fallback scan through call_logs table for active booking tags
     try:
         logs = db.fetch_call_logs(limit=150)
         extracted_appointments = []
         for log in logs:
             summary_text = log.get("summary", "") or ""
-            # If the log summary explicitly indicates a successful booking context
             if "confirm" in summary_text.lower() or "booked" in summary_text.lower():
+                # Extract the target meeting date string (YYYY-MM-DD) out of the text summary
+                date_match = re.search(r'(\d{4}-\d{2}-\d{2})', summary_text)
+                if date_match:
+                    # Place the calendar dot on the target meeting day
+                    calendar_display_date = f"{date_match.group(1)}T00:00:00"
+                else:
+                    calendar_display_date = log.get("created_at")
+
                 extracted_appointments.append({
                     "id": log.get("id"),
                     "phone_number": log.get("phone_number", "Unknown"),
-                    "created_at": log.get("created_at"),
+                    "created_at": calendar_display_date,
                     "summary": summary_text
                 })
         return extracted_appointments

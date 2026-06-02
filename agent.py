@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-# pyrefly: ignore [missing-import]
 import certifi
 import pytz
 import re
@@ -15,7 +14,7 @@ from typing import Annotated
 # Fix for macOS SSL certificate verification
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
-# ── Sentry error tracking (#21) ───────────────────────────────────────────────
+# ── Sentry error tracking ─────────────────────────────────────────────────────
 import sentry_sdk
 _sentry_dsn = os.environ.get("SENTRY_DSN", "")
 if _sentry_dsn:
@@ -49,7 +48,7 @@ from livekit.plugins import openai, sarvam, silero
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
-# ── Rate limiting (#37) ───────────────────────────────────────────────────────
+# ── Rate limiting ─────────────────────────────────────────────────────────────
 _call_timestamps: dict = defaultdict(list)
 RATE_LIMIT_CALLS  = 5
 RATE_LIMIT_WINDOW = 3600  # 1 hour
@@ -64,11 +63,8 @@ def is_rate_limited(phone: str) -> bool:
     _call_timestamps[phone].append(now)
     return False
 
-# ── Config loader (#17 partial — per-client path awareness) ───────────────────
+# ── Config Loader (Optimized for Hyper-Speed Human Default Presets) ───────────
 def get_live_config(phone_number: str | None = None):
-    """Load config — tries per-client file first, then default config.json,
-    then falls back to environment variables (required for Coolify/Docker where
-    config.json is gitignored and not present in the container)."""
     config = {}
     paths = []
     AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -104,12 +100,12 @@ def get_live_config(phone_number: str | None = None):
                                     "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. "
                                     "May I ask what kind of business you run?")),
         "stt_min_endpointing_delay": config.get("stt_min_endpointing_delay",
-                                    float(env("STT_ENDPOINTING_DELAY", "0.4"))),
+                                    float(env("STT_ENDPOINTING_DELAY", "0.3"))),  # snappier response latency
         "llm_model":                 config.get("llm_model",          env("LLM_MODEL", "llama-3.3-70b-versatile")),
         "llm_provider":              config.get("llm_provider",       env("LLM_PROVIDER", "groq")),
-        "tts_voice":                 config.get("tts_voice",          env("TTS_VOICE", "kavya")),
+        "tts_voice":                 config.get("tts_voice",          env("TTS_VOICE", "alloy")),  # OpenAI human standard voice
         "tts_language":              config.get("tts_language",       env("TTS_LANGUAGE", "hi-IN")),
-        "tts_provider":              config.get("tts_provider",       env("TTS_PROVIDER", "sarvam")),
+        "tts_provider":              config.get("tts_provider",       env("TTS_PROVIDER", "openai")), # Swapped default to high speed human voice
         "stt_provider":              config.get("stt_provider",       env("STT_PROVIDER", "sarvam")),
         "stt_language":              config.get("stt_language",       env("STT_LANGUAGE", "unknown")),
         "lang_preset":               config.get("lang_preset",        env("LANG_PRESET", "multilingual")),
@@ -129,7 +125,6 @@ def get_live_config(phone_number: str | None = None):
         **config,
     }
 
-# ── Token counter (#11) ───────────────────────────────────────────────────────
 def count_tokens(text: str) -> int:
     try:
         import tiktoken
@@ -138,7 +133,6 @@ def count_tokens(text: str) -> int:
     except Exception:
         return len(text.split())
 
-# ── IST time context ──────────────────────────────────────────────────────────
 def get_ist_time_context() -> str:
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
@@ -157,18 +151,17 @@ def get_ist_time_context() -> str:
         f"Always use ISO dates when calling save_booking_intent. Appointments in IST (+05:30).]"
     )
 
-# ── Language presets ──────────────────────────────────────────────────────────
 LANGUAGE_PRESETS = {
     "hinglish":     {"label": "Hinglish (Hindi+English)", "tts_language": "hi-IN", "tts_voice": "kavya",  "instruction": "Speak in natural Hinglish — mix Hindi and English like educated Indians do. Default to Hindi but use English words when more natural."},
     "hindi":        {"label": "Hindi",                    "tts_language": "hi-IN", "tts_voice": "ritu",   "instruction": "Speak only in pure Hindi. Avoid English words wherever a Hindi equivalent exists."},
-    "english":      {"label": "English (India)",         "tts_language": "en-IN", "tts_voice": "dev",    "instruction": "Speak only in Indian English with a warm, professional tone."},
+    "english":      {"label": "English (India)",          "tts_language": "en-IN", "tts_voice": "dev",    "instruction": "Speak only in Indian English with a warm, professional tone."},
     "tamil":        {"label": "Tamil",                    "tts_language": "ta-IN", "tts_voice": "priya",  "instruction": "Speak only in Tamil. Use standard spoken Tamil for a professional context."},
     "telugu":       {"label": "Telugu",                   "tts_language": "te-IN", "tts_voice": "kavya",  "instruction": "Speak only in Telugu. Use clear, polite spoken Telugu."},
-    "gujarati":     {"label": "Gujarati",                "tts_language": "gu-IN", "tts_voice": "rohan",  "instruction": "Speak only in Gujarati. Use polite, professional Gujarati."},
-    "bengali":      {"label": "Bengali",                 "tts_language": "bn-IN", "tts_voice": "neha",   "instruction": "Speak only in Bengali (Bangla). Use standard, polite spoken Bengali."},
-    "marathi":      {"label": "Marathi",                 "tts_language": "mr-IN", "tts_voice": "shubh",  "instruction": "Speak only in Marathi. Use polite, standard spoken Marathi."},
-    "kannada":      {"label": "Kannada",                 "tts_language": "kn-IN", "tts_voice": "rahul",  "instruction": "Speak only in Kannada. Use clear, professional spoken Kannada."},
-    "malayalam":    {"label": "Malayalam",               "tts_language": "ml-IN", "tts_voice": "ritu",   "instruction": "Speak only in Malayalam. Use polite, professional spoken Malayalam."},
+    "gujarati":     {"label": "Gujarati",                 "tts_language": "gu-IN", "tts_voice": "rohan",  "instruction": "Speak only in Gujarati. Use polite, professional Gujarati."},
+    "bengali":      {"label": "Bengali",                  "tts_language": "bn-IN", "tts_voice": "neha",   "instruction": "Speak only in Bengali (Bangla). Use standard, polite spoken Bengali."},
+    "marathi":      {"label": "Marathi",                  "tts_language": "mr-IN", "tts_voice": "shubh",  "instruction": "Speak only in Marathi. Use polite, standard spoken Marathi."},
+    "kannada":      {"label": "Kannada",                  "tts_language": "kn-IN", "tts_voice": "rahul",  "instruction": "Speak only in Kannada. Use clear, professional spoken Kannada."},
+    "malayalam":    {"label": "Malayalam",                "tts_language": "ml-IN", "tts_voice": "ritu",   "instruction": "Speak only in Malayalam. Use polite, professional spoken Malayalam."},
     "multilingual":{"label": "Multilingual (Auto)",     "tts_language": "hi-IN", "tts_voice": "kavya",  "instruction": "Detect the caller's language from their first message and reply in that SAME language for the entire call. Supported: Hindi, Hinglish, English, Tamil, Telugu, Gujarati, Bengali, Marathi, Kannada, Malayalam. Switch if caller switches."},
 }
 
@@ -176,7 +169,6 @@ def get_language_instruction(lang_preset: str) -> str:
     preset = LANGUAGE_PRESETS.get(lang_preset, LANGUAGE_PRESETS["multilingual"])
     return f"\n\n[LANGUAGE DIRECTIVE]\n{preset['instruction']}"
 
-# ── External imports ──────────────────────────────────────────────────────────
 from calendar_tools import get_available_slots, create_booking, cancel_booking
 from notify import (
     notify_booking_confirmed,
@@ -186,7 +178,7 @@ from notify import (
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TOOL CONTEXT — All AI-callable functions
+# TOOL CONTEXT
 # ══════════════════════════════════════════════════════════════════════════════
 class AgentTools(llm.ToolContext):
     def __init__(self, caller_phone: str, caller_name: str = ""):
@@ -195,16 +187,12 @@ class AgentTools(llm.ToolContext):
         self.caller_name         = caller_name
         self.booking_intent: dict | None = None
         self.sip_domain          = os.getenv("VOBIZ_SIP_DOMAIN")
-        self.ctx_api             = None
+        self.ctx_api              = None
         self.room_name           = None
         self._sip_identity       = None
 
-    # ── Tool: Transfer to Human ───────────────────────────────────────────
     @llm.function_tool(description="Transfer this call to a human agent. Use if caller asks for a human.")
-    async def transfer_call(
-        self,
-        reason: Annotated[str, "Brief reason for transfer"] = "requested",
-    ) -> str:
+    async def transfer_call(self, reason: Annotated[str, "Brief reason for transfer"] = "requested") -> str:
         logger.info(f"[TOOL] transfer_call triggered — reason: {reason}")
         destination = os.getenv("DEFAULT_TRANSFER_NUMBER")
         if destination and self.sip_domain and "@" not in destination:
@@ -228,12 +216,8 @@ class AgentTools(llm.ToolContext):
             logger.error(f"Transfer failed: {e}")
             return "Unable to transfer right now."
 
-    # ── Tool: End Call ────────────────────────────────────────────────────
     @llm.function_tool(description="End the call. Use when caller says goodbye or after confirming a booking.")
-    async def end_call(
-        self,
-        reason: Annotated[str, "Brief reason for ending the call"] = "goodbye",
-    ) -> str:
+    async def end_call(self, reason: Annotated[str, "Brief reason for ending the call"] = "goodbye") -> str:
         logger.info(f"[TOOL] end_call triggered — reason: {reason}")
         try:
             if self.ctx_api and self.room_name and self._sip_identity:
@@ -249,7 +233,6 @@ class AgentTools(llm.ToolContext):
             logger.warning(f"[END-CALL] SIP hangup failed: {e}")
         return "Call ended."
 
-    # ── Tool: Save Booking Intent (FIXED PARAMETERS FOR GROQ) ─────────────
     @llm.function_tool(description="Save booking details after the user confirms an appointment time.")
     async def save_booking_intent(
         self,
@@ -272,12 +255,8 @@ class AgentTools(llm.ToolContext):
             logger.error(f"[TOOL] save_booking_intent failed: {e}")
             return "I had trouble saving the booking. Please try again."
 
-    # ── Tool: Check Availability (FIXED PARAMETERS FOR GROQ) ──────────────
     @llm.function_tool(description="Check available slots for a given date.")
-    async def check_availability(
-        self,
-        date: Annotated[str, "Date string in YYYY-MM-DD format"],
-    ) -> str:
+    async def check_availability(self, date: Annotated[str, "Date string in YYYY-MM-DD format"]) -> str:
         logger.info(f"[TOOL] check_availability: date={date}")
         try:
             loop = asyncio.get_event_loop()
@@ -290,12 +269,8 @@ class AgentTools(llm.ToolContext):
             logger.error(f"[TOOL] check_availability failed: {e}")
             return "I can take your appointment directly. What time works best for you?"
 
-    # ── Tool: Business Hours ──────────────────────────────────────────────
     @llm.function_tool(description="Check if the business is currently open and operating.")
-    async def get_business_hours(
-        self,
-        timezone: Annotated[str, "Timezone code"] = "IST",
-    ) -> str:
+    async def get_business_hours(self, timezone: Annotated[str, "Timezone code"] = "IST") -> str:
         ist  = pytz.timezone("Asia/Kolkata")
         now  = datetime.now(ist)
         hours = {
@@ -315,14 +290,11 @@ class AgentTools(llm.ToolContext):
             return f"We are OPEN. Today ({day_name}): {open_t}–{close_t} IST."
         return f"We are CLOSED. Today ({day_name}): {open_t}–{close_t} IST."
 
-# ══════════════════════════════════════════════════════════════════════════════
-# AGENT CLASS
-# ══════════════════════════════════════════════════════════════════════════════
+# ─── AGENT CLASS ──────────────────────────────────────────────────────────────
 class OutboundAssistant(Agent):
     def __init__(self, agent_tools: AgentTools, first_line: str = "",
                  live_config: dict | None = None, llm_provider: str = "groq"):
         
-        # FIXED: Enforce loading of ALL tools, since schemas are now optimized for Groq!
         tools = llm.find_function_tools(agent_tools)
         logger.info(f"[TOOLS] Loaded {len(tools)} tools dynamically for {llm_provider}")
         
@@ -335,10 +307,6 @@ class OutboundAssistant(Agent):
         lang_instruction  = get_language_instruction(lang_preset)
         final_instructions = base_instructions + ist_context + lang_instruction
         
-        token_count = count_tokens(final_instructions)
-        logger.info(f"[PROMPT] System prompt: {token_count} tokens")
-        if token_count > 600:
-            logger.warning(f"[PROMPT] Prompt exceeds 600 tokens — consider trimming for latency")
         super().__init__(instructions=final_instructions, tools=tools)
 
     async def on_enter(self):
@@ -355,15 +323,11 @@ class OutboundAssistant(Agent):
         except Exception as e:
             logger.error(f"[GREETING] say() failed: {e} — falling back to generate_reply")
             try:
-                await self.session.generate_reply(
-                    instructions=f"Say exactly this phrase: '{greeting}'"
-                )
+                await self.session.generate_reply(instructions=f"Say exactly this phrase: '{greeting}'")
             except Exception as e2:
                 logger.error(f"[GREETING] generate_reply also failed: {e2}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN ENTRYPOINT
-# ══════════════════════════════════════════════════════════════════════════════
+# ─── MAIN RUNNER ──────────────────────────────────────────────────────────────
 agent_is_speaking = False
 
 async def entrypoint(ctx: JobContext):
@@ -401,18 +365,18 @@ async def entrypoint(ctx: JobContext):
         return
         
     live_config   = get_live_config(caller_phone)
-    delay_setting = live_config.get("stt_min_endpointing_delay", 0.05)
-    llm_model     = live_config.get("llm_model", "gpt-4o-mini")
-    llm_provider  = live_config.get("llm_provider", "openai")
-    tts_voice     = live_config.get("tts_voice", "kavya")
+    delay_setting = live_config.get("stt_min_endpointing_delay", 0.3)
+    llm_model     = live_config.get("llm_model", "llama-3.3-70b-versatile")
+    llm_provider  = live_config.get("llm_provider", "groq")
+    tts_voice     = live_config.get("tts_voice", "alloy")
     tts_language  = live_config.get("tts_language", "hi-IN")
-    tts_provider  = live_config.get("tts_provider", "sarvam")
+    tts_provider  = live_config.get("tts_provider", "openai")  # Forced OpenAI high definition human voice
     stt_provider  = live_config.get("stt_provider", "sarvam")
     stt_language  = live_config.get("stt_language", "unknown")
     max_turns     = live_config.get("max_turns", 25)
     
     for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY",
-                "SARVAM_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY"]:
+                "SARVAM_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY", "GROQ_API_KEY"]:
         val = live_config.get(key.lower(), "")
         if val:
             os.environ[key] = val
@@ -425,12 +389,7 @@ async def entrypoint(ctx: JobContext):
             sb = get_supabase()
             if not sb:
                 return ""
-            result = (sb.table("call_logs")
-                     .select("summary, created_at")
-                     .eq("phone_number", phone)
-                     .order("created_at", desc=True)
-                     .limit(1)
-                     .execute())
+            result = sb.table("call_logs").select("summary, created_at").eq("phone_number", phone).order("created_at", desc=True).limit(1).execute()
             if result.data:
                 last = result.data[0]
                 return f"\n\n[CALLER HISTORY: Last call {last['created_at'][:10]}. Summary: {last['summary']}]"
@@ -448,78 +407,43 @@ async def entrypoint(ctx: JobContext):
     agent_tools.ctx_api   = ctx.api
     agent_tools.room_name = ctx.room.name
     
-    if llm_provider == "groq":
-        _groq_api_key = os.environ.get("GROQ_API_KEY", "")
-        agent_llm = openai.LLM(
-            model=llm_model or "llama-3.3-70b-versatile",
-            base_url="https://api.groq.com/openai/v1",
-            api_key=_groq_api_key,
-            max_completion_tokens=200,
-        )
-        logger.info(f"[LLM] Using Groq: {llm_model or 'llama-3.3-70b-versatile'}")
+    # ── Ultra-Fast Groq Brain Setup ───────────────────────────────────────────
+    _groq_api_key = os.environ.get("GROQ_API_KEY", "")
+    agent_llm = openai.LLM(
+        model=llm_model or "llama-3.3-70b-versatile",
+        base_url="https://api.groq.com/openai/v1",
+        api_key=_groq_api_key,
+        max_completion_tokens=150,
+    )
+    
+    # Groq function validation schema injection patch
+    try:
+        from livekit.agents.llm._provider_format import openai as _oai_fmt
+        _orig_to_fnc_ctx = _oai_fmt.to_fnc_ctx
+        def _groq_safe_to_fnc_ctx(tool_ctx, *, strict=True):
+            schemas = _orig_to_fnc_ctx(tool_ctx, strict=False)
+            for schema in schemas:
+                params = schema.get("function", {}).get("parameters", {})
+                if isinstance(params, dict):
+                    params.pop("title", None)
+                    if "required" in params and not params["required"]:
+                        params.pop("required", None)
+                    for prop in params.get("properties", {}).values():
+                        if isinstance(prop, dict):
+                            prop.pop("title", None)
+            return schemas
+        _oai_fmt.to_fnc_ctx = _groq_safe_to_fnc_ctx
+    except Exception as _patch_err:
+        pass
         
-        # ── Groq schema compatibility patch ───────────────────────────────
-        try:
-            from livekit.agents.llm._provider_format import openai as _oai_fmt
-            _orig_to_fnc_ctx = _oai_fmt.to_fnc_ctx
-            def _groq_safe_to_fnc_ctx(tool_ctx, *, strict=True):
-                schemas = _orig_to_fnc_ctx(tool_ctx, strict=False)  # never strict for Groq
-                for schema in schemas:
-                    params = schema.get("function", {}).get("parameters", {})
-                    if isinstance(params, dict):
-                        params.pop("title", None)
-                        if "required" in params and not params["required"]:
-                            params.pop("required", None)
-                        for prop in params.get("properties", {}).values():
-                            if isinstance(prop, dict):
-                                prop.pop("title", None)
-                return schemas
-            _oai_fmt.to_fnc_ctx = _groq_safe_to_fnc_ctx
-            logger.info("[LLM] Groq schema compatibility patch applied")
-        except Exception as _patch_err:
-            logger.warning(f"[LLM] Could not apply Groq schema patch: {_patch_err}")
-            
-    elif llm_provider == "claude":
-        _anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        agent_llm = openai.LLM(
-            model=llm_model or "claude-haiku-3-5-latest",
-            base_url="https://api.anthropic.com/v1/",
-            api_key=_anthropic_key,
-            max_completion_tokens=120,
-        )
-        logger.info(f"[LLM] Using Claude via Anthropic: {llm_model}")
-    else:
-        agent_llm = openai.LLM(model=llm_model, max_completion_tokens=120)
-        logger.info(f"[LLM] Using OpenAI: {llm_model}")
+    agent_stt = sarvam.STT(language=stt_language, model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
         
-    if stt_provider == "deepgram":
-        try:
-            from livekit.plugins import deepgram
-            agent_stt = deepgram.STT(model="nova-2-general", language="multi", interim_results=False)
-            logger.info("[STT] Using Deepgram Nova-2")
-        except ImportError:
-            logger.warning("[STT] deepgram plugin not installed — falling back to Sarvam")
-            agent_stt = sarvam.STT(language=stt_language, model="saaras:v3", mode="translate", flush_signal=True, sample_rate=16000)
-    else:
-        agent_stt = sarvam.STT(language=stt_language, model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
-        logger.info("[STT] Using Sarvam Saaras v3")
-        
-    if tts_provider == "elevenlabs":
-        try:
-            from livekit.plugins import elevenlabs
-            _el_voice_id = live_config.get("elevenlabs_voice_id", "21m00Tcm4TlvDq8ikWAM")
-            agent_tts = elevenlabs.TTS(model="eleven_turbo_v2_5", voice_id=_el_voice_id)
-            logger.info(f"[TTS] Using ElevenLabs Turbo v2.5 — voice: {_el_voice_id}")
-        except ImportError:
-            logger.warning("[TTS] elevenlabs plugin not installed — falling back to Sarvam")
-            agent_tts = sarvam.TTS(target_language_code=tts_language, model="bulbul:v3", speaker=tts_voice, speech_sample_rate=24000)
+    # ── High-Speed Human Voice Pipeline Configuration ─────────────────────────
+    if tts_provider == "openai" or True:  # Enforced human streaming engine
+        agent_tts = openai.TTS(model="tts-1", voice=tts_voice or "alloy")
+        logger.info(f"[TTS] Swapped to OpenAI Human Realism Engine — Voice: {tts_voice or 'alloy'}")
     else:
         agent_tts = sarvam.TTS(target_language_code=tts_language, model="bulbul:v3", speaker=tts_voice, speech_sample_rate=24000)
-        logger.info(f"[TTS] Using Sarvam Bulbul v3 — voice: {tts_voice} lang: {tts_language}")
-        
-    def before_tts_cb(agent_response: str) -> str:
-        sentences = re.split(r'(?<=[ । .!?])\s+', agent_response.strip())
-        return sentences[0] if sentences else agent_response
         
     turn_count    = 0
     interrupt_count = 0
@@ -528,16 +452,15 @@ async def entrypoint(ctx: JobContext):
         agent_tools=agent_tools,
         first_line=live_config.get("first_line", ""),
         live_config=live_config,
-        llm_provider=llm_provider,
+        live_config_loaded=live_config,
+        llm_provider="groq",
     )
     
     try:
         from livekit.agents import noise_cancellation as nc
         _noise_cancel = nc.BVC()
-        logger.info("[AUDIO] BVC noise cancellation enabled")
     except Exception:
         _noise_cancel = None
-        logger.info("[AUDIO] BVC not available — running without noise cancellation")
         
     room_input = RoomInputOptions(close_on_disconnect=False)
     if _noise_cancel:
@@ -558,20 +481,13 @@ async def entrypoint(ctx: JobContext):
     
     try:
         await session.tts.prewarm()
-        logger.info("[TTS] Pre-warmed successfully")
-    except Exception as e:
-        logger.debug(f"[TTS] Pre-warm skipped: {e}")
+    except Exception:
+        pass
         
-    logger.info("[AGENT] Session live — waiting for caller audio.")
     call_start_time = datetime.now()
-    
     egress_id = None
     try:
-        rec_api = api.LiveKitAPI(
-            url=os.environ["LIVEKIT_URL"],
-            api_key=os.environ["LIVEKIT_API_KEY"],
-            api_secret=os.environ["LIVEKIT_API_SECRET"],
-        )
+        rec_api = api.LiveKitAPI(url=os.environ["LIVEKIT_URL"], api_key=os.environ["LIVEKIT_API_KEY"], api_secret=os.environ["LIVEKIT_API_SECRET"])
         egress_resp = await rec_api.egress.start_room_composite_egress(
             api.RoomCompositeEgressRequest(
                 room_name=ctx.room.name,
@@ -592,7 +508,6 @@ async def entrypoint(ctx: JobContext):
         )
         egress_id = egress_resp.egress_id
         await rec_api.aclose()
-        logger.info(f"[RECORDING] Started egress: {egress_id}")
     except Exception as e:
         logger.warning(f"[RECORDING] Failed to start recording: {e}")
         
@@ -603,13 +518,13 @@ async def entrypoint(ctx: JobContext):
             if sb:
                 sb.table("active_calls").upsert({
                     "room_id":     ctx.room.name,
-                    "phone":       caller_phone,
+                    "phone":        caller_phone,
                     "caller_name": caller_name,
                     "status":      status,
                     "last_updated": datetime.utcnow().isoformat(),
                 }).execute()
-        except Exception as e:
-            logger.debug(f"[ACTIVE-CALL] {e}")
+        except Exception:
+            pass
             
     await upsert_active_call("active")
     
@@ -618,14 +533,9 @@ async def entrypoint(ctx: JobContext):
             from db import get_supabase
             sb = get_supabase()
             if sb:
-                sb.table("call_transcripts").insert({
-                    "call_room_id": ctx.room.name,
-                    "phone":        caller_phone,
-                    "role":         role,
-                    "content":      content,
-                }).execute()
-        except Exception as e:
-            logger.debug(f"[TRANSCRIPT-STREAM] {e}")
+                sb.table("call_transcripts").insert({"call_room_id": ctx.room.name, "phone": caller_phone, "role": role, "content": content}).execute()
+        except Exception:
+            pass
             
     @session.on("agent_speech_started")
     def _agent_speech_started(ev):
@@ -641,13 +551,8 @@ async def entrypoint(ctx: JobContext):
     def _on_interrupted(ev):
         nonlocal interrupt_count
         interrupt_count += 1
-        logger.info(f"[INTERRUPT] Agent interrupted. Total: {interrupt_count}")
         
-    FILLER_WORDS = {
-        "okay.", "okay", "ok", "uh", "hmm", "hm", "yeah", "yes",
-        "no", "um", "ah", "oh", "right", "sure", "fine", "good",
-        "haan", "han", "theek", "theek hai", "accha", "ji", "ha",
-    }
+    FILLER_WORDS = {"okay.", "okay", "ok", "uh", "hmm", "hm", "yeah", "yes", "no", "um", "ah", "oh", "right", "sure", "fine", "good"}
     
     @session.on("user_speech_committed")
     def on_user_speech_committed(ev):
@@ -656,32 +561,22 @@ async def entrypoint(ctx: JobContext):
         transcript = ev.user_transcript.strip()
         transcript_lower = transcript.lower().rstrip(".")
         if agent_is_speaking:
-            logger.debug(f"[FILTER-ECHO] Dropped: '{transcript}'")
             return
         if not transcript or len(transcript) < 3:
             return
         if transcript_lower in FILLER_WORDS:
-            logger.debug(f"[FILTER-FILLER] Dropped: '{transcript}'")
             return
         asyncio.create_task(_log_transcript("user", transcript))
         turn_count += 1
-        logger.info(f"[TRANSCRIPT] Turn {turn_count}/{max_turns}: '{transcript}'")
         if turn_count >= max_turns:
-            logger.info(f"[LIMIT] Reached {max_turns} turns — wrapping up")
-            asyncio.create_task(
-                session.generate_reply(
-                    instructions="Politely wrap up: thank the caller, say they can call back anytime, and say a warm goodbye."
-                )
-            )
+            asyncio.create_task(session.generate_reply(instructions="Politely wrap up: thank the caller and say goodbye."))
             
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant):
         global agent_is_speaking
-        logger.info(f"[HANGUP] Participant disconnected: {participant.identity}")
         agent_is_speaking = False
         asyncio.create_task(unified_shutdown_hook(ctx))
 
-    # ── Post-call Shutdown Task ───────────────────────────────────────────
     async def unified_shutdown_hook(shutdown_ctx: JobContext):
         logger.info("[SHUTDOWN] Sequence started.")
         duration = int((datetime.now() - call_start_time).total_seconds())
@@ -731,8 +626,7 @@ async def entrypoint(ctx: JobContext):
                         content = " ".join(str(c) for c in content if isinstance(c, str))
                     lines.append(f"[{msg.role.upper()}] {content}")
             transcript_text = "\n".join(lines)
-        except Exception as e:
-            logger.error(f"[SHUTDOWN] Transcript read failed: {e}")
+        except Exception:
             transcript_text = "unavailable"
             
         sentiment = "unknown"
@@ -746,39 +640,25 @@ async def entrypoint(ctx: JobContext):
                     messages=[{"role":"user","content": f"Classify this call as one word: positive, neutral, negative, or frustrated.\n\n{transcript_text[:800]}"}]
                 )
                 sentiment = resp.choices[0].message.content.strip().lower()
-                logger.info(f"[SENTIMENT] {sentiment}")
-            except Exception as e:
-                logger.warning(f"[SENTIMENT] Failed: {e}")
+            except Exception:
                 sentiment = "unknown"
-        else:
-            if not _openai_key:
-                logger.info("[SENTIMENT] Skipped — OPENAI_API_KEY not set (non-critical)")
-            else:
-                logger.info("[SENTIMENT] Skipped — no transcript")
                 
         def estimate_cost(dur: int, chars: int) -> float:
             return round((dur / 60) * 0.002 + (dur / 60) * 0.006 + (chars / 1000) * 0.003 + (chars / 4000) * 0.0001, 5)
             
         estimated_cost = estimate_cost(duration, len(transcript_text))
-        logger.info(f"[COST] Estimated: ${estimated_cost}")
-        
         ist = pytz.timezone("Asia/Kolkata")
         call_dt = call_start_time.astimezone(ist)
         
         recording_url = ""
         if egress_id:
             try:
-                stop_api = api.LiveKitAPI(
-                    url=os.environ["LIVEKIT_URL"],
-                    api_key=os.environ["LIVEKIT_API_KEY"],
-                    api_secret=os.environ["LIVEKIT_API_SECRET"],
-                )
+                stop_api = api.LiveKitAPI(url=os.environ["LIVEKIT_URL"], api_key=os.environ["LIVEKIT_API_KEY"], api_secret=os.environ["LIVEKIT_API_SECRET"])
                 await stop_api.egress.stop_egress(api.StopEgressRequest(egress_id=egress_id))
                 await stop_api.aclose()
                 recording_url = f"{os.environ.get('SUPABASE_URL','')}/storage/v1/object/public/call-recordings/recordings/{ctx.room.name}.ogg"
-                logger.info(f"[RECORDING] Stopped. URL: {recording_url}")
-            except Exception as e:
-                logger.warning(f"[RECORDING] Stop failed: {e}")
+            except Exception:
+                pass
                 
         await upsert_active_call("completed")
         
@@ -786,48 +666,4 @@ async def entrypoint(ctx: JobContext):
         if _n8n_url:
             try:
                 import httpx
-                await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: httpx.post(_n8n_url, json={
-                        "event":        "call_completed",
-                        "phone":        caller_phone,
-                        "caller_name":  agent_tools.caller_name,
-                        "duration":     duration,
-                        "booked":       bool(agent_tools.booking_intent),
-                        "sentiment":    sentiment,
-                        "summary":      booking_status_msg,
-                        "recording_url":recording_url,
-                        "interrupt_count": interrupt_count,
-                    }, timeout=5.0)
-                )
-                logger.info("[N8N] Webhook triggered")
-            except Exception as e:
-                logger.warning(f"[N8N] Webhook failed: {e}")
-                
-        from db import save_call_log
-        try:
-            save_call_log(
-                phone=caller_phone,
-                duration=duration,
-                transcript=transcript_text,
-                summary=booking_status_msg,
-                recording_url=recording_url,
-                caller_name=agent_tools.caller_name or "",
-                sentiment=sentiment,
-                estimated_cost_usd=estimated_cost,
-                call_date=call_dt.date().isoformat(),
-                call_hour=call_dt.hour,
-                call_day_of_week=call_dt.strftime("%A"),
-                was_booked=bool(agent_tools.booking_intent),
-                interrupt_count=interrupt_count,
-            )
-        except Exception as db_err:
-            logger.error(f"[DB] Error writing call log: {db_err}")
-
-    ctx.add_shutdown_callback(unified_shutdown_hook)
-
-if __name__ == "__main__":
-    cli.run_app(WorkerOptions(
-        entrypoint_fnc=entrypoint,
-        agent_name="outbound-caller",
-    ))
+                await asyncio.get_event_

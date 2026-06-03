@@ -340,7 +340,7 @@ async def entrypoint(ctx: JobContext):
         
     live_config   = get_live_config(caller_phone)
     
-    # Instantiate tools right away so schemas evaluate first
+    # Instantiate tools right away
     agent_tools = AgentTools(caller_phone=caller_phone, caller_name=caller_name)
     agent_tools._sip_identity = f"sip_{caller_phone.replace('+','')}" if phone_number else "inbound_caller"
     agent_tools.ctx_api   = ctx.api
@@ -362,9 +362,17 @@ async def entrypoint(ctx: JobContext):
     _openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
     _sarvam_key = os.environ.get("SARVAM_API_KEY", "").strip()
 
+    # ── Bulletproof OpenAI Voice Checker Block ────────────────────────────────
+    OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "sage", "coral"}
+    
     if _openai_key and not _openai_key.startswith("YOUR_"):
-        agent_tts = openai.TTS(model="tts-1", voice=tts_voice or "alloy")
-        logger.info(f"[TTS-ENGINE] Running OpenAI Premium Human Voice: {tts_voice or 'alloy'}")
+        target_voice = str(tts_voice).lower().strip() if tts_voice else "alloy"
+        if target_voice not in OPENAI_VOICES:
+            logger.warning(f"[TTS-SANITY] Voice choice '{target_voice}' invalid for OpenAI. Auto-corrected to 'alloy'.")
+            target_voice = "alloy"
+            
+        agent_tts = openai.TTS(model="tts-1", voice=target_voice)
+        logger.info(f"[TTS-ENGINE] Running OpenAI Premium Human Voice: {target_voice}")
     elif _sarvam_key:
         agent_tts = sarvam.TTS(target_language_code=tts_language, model="bulbul:v3", speaker="kavya", speech_sample_rate=24000)
         logger.info("[TTS-ENGINE] OpenAI Key absent — Auto-Flipped safely to Sarvam fallback")
@@ -372,7 +380,6 @@ async def entrypoint(ctx: JobContext):
         agent_tts = openai.TTS(model="tts-1", voice="alloy")
         logger.warning("[TTS-ENGINE] Warning: No valid API keys found for Text-to-Speech synthesis.")
         
-    # ── Fixed Dynamic LLM Router Block ────────────────────────────────────────
     if llm_provider == "groq":
         _groq_api_key = os.environ.get("GROQ_API_KEY", "")
         agent_llm = openai.LLM(
@@ -401,14 +408,12 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             pass
     else:
-        # Native OpenAI processing track (Fixes the OpenAI silence conflict loop)
         agent_llm = openai.LLM(
             model=llm_model or "gpt-4o-mini", 
             max_completion_tokens=150
         )
         logger.info(f"[LLM-ROUTER] Active Brain: OpenAI Native Pipeline ({llm_model})")
         
-    # ── Fixed Speech To Text Language Sanitization Block ──────────────────────
     stt_lang_code = stt_language if stt_language and stt_language != "unknown" else "hi-IN"
     agent_stt = sarvam.STT(
         language=stt_lang_code, 
@@ -459,7 +464,6 @@ async def entrypoint(ctx: JobContext):
         allow_interruptions=True,
     )
     
-    # ── Fixed Direct Core Pipeline Injection Greeting ─────────────────────────
     await session.start(room=ctx.room, agent=agent)
     logger.info("[PIPELINE] Handshake connected successfully.")
     

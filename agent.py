@@ -63,7 +63,7 @@ def is_rate_limited(phone: str) -> bool:
     _call_timestamps[phone].append(now)
     return False
 
-# ── Config Loader (Optimized for Hyper-Speed Human Default Presets) ───────────
+# ── Config Loader ─────────────────────────────────────────────────────────────
 def get_live_config(phone_number: str | None = None):
     config = {}
     paths = []
@@ -100,12 +100,12 @@ def get_live_config(phone_number: str | None = None):
                                     "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. "
                                     "May I ask what kind of business you run?")),
         "stt_min_endpointing_delay": config.get("stt_min_endpointing_delay",
-                                    float(env("STT_ENDPOINTING_DELAY", "0.3"))),  # snappier response latency
+                                    float(env("STT_ENDPOINTING_DELAY", "0.35"))),
         "llm_model":                 config.get("llm_model",          env("LLM_MODEL", "llama-3.3-70b-versatile")),
         "llm_provider":              config.get("llm_provider",       env("LLM_PROVIDER", "groq")),
-        "tts_voice":                 config.get("tts_voice",          env("TTS_VOICE", "alloy")),  # OpenAI human standard voice
+        "tts_voice":                 config.get("tts_voice",          env("TTS_VOICE", "alloy")),
         "tts_language":              config.get("tts_language",       env("TTS_LANGUAGE", "hi-IN")),
-        "tts_provider":              config.get("tts_provider",       env("TTS_PROVIDER", "openai")), # Swapped default to high speed human voice
+        "tts_provider":              config.get("tts_provider",       env("TTS_PROVIDER", "openai")),
         "stt_provider":              config.get("stt_provider",       env("STT_PROVIDER", "sarvam")),
         "stt_language":              config.get("stt_language",       env("STT_LANGUAGE", "unknown")),
         "lang_preset":               config.get("lang_preset",        env("LANG_PRESET", "multilingual")),
@@ -177,9 +177,7 @@ from notify import (
     notify_agent_error,
 )
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TOOL CONTEXT
-# ══════════════════════════════════════════════════════════════════════════════
+# ─── TOOL CONTEXT ─────────────────────────────────────────────────────────────
 class AgentTools(llm.ToolContext):
     def __init__(self, caller_phone: str, caller_name: str = ""):
         super().__init__(tools=[])
@@ -252,7 +250,7 @@ class AgentTools(llm.ToolContext):
             self.caller_name = caller_name
             return f"Booking intent saved for {caller_name} at {start_time}. It will confirm on hangup."
         except Exception as e:
-            logger.error(f"[TOOL] save_booking_intent failed: {e}")
+            logger.error(f"[SAVE-INTENT] failed: {e}")
             return "I had trouble saving the booking. Please try again."
 
     @llm.function_tool(description="Check available slots for a given date.")
@@ -266,7 +264,7 @@ class AgentTools(llm.ToolContext):
             slot_strings = [s.get("label", s.get("time", str(s))) for s in slots[:6]]
             return f"Available slots on {date}: {', '.join(slot_strings)} IST."
         except Exception as e:
-            logger.error(f"[TOOL] check_availability failed: {e}")
+            logger.error(f"[CHECK-AVAILABILITY] failed: {e}")
             return "I can take your appointment directly. What time works best for you?"
 
     @llm.function_tool(description="Check if the business is currently open and operating.")
@@ -296,14 +294,11 @@ class OutboundAssistant(Agent):
                  live_config: dict | None = None, llm_provider: str = "groq"):
         
         tools = llm.find_function_tools(agent_tools)
-        logger.info(f"[TOOLS] Loaded {len(tools)} tools dynamically for {llm_provider}")
-        
         self._first_line  = first_line
         self._live_config = live_config or {}
-        live_config_loaded = self._live_config
-        base_instructions = live_config_loaded.get("agent_instructions", "")
+        base_instructions = self._live_config.get("agent_instructions", "")
         ist_context       = get_ist_time_context()
-        lang_preset       = live_config_loaded.get("lang_preset", "multilingual")
+        lang_preset       = self._live_config.get("lang_preset", "multilingual")
         lang_instruction  = get_language_instruction(lang_preset)
         final_instructions = base_instructions + ist_context + lang_instruction
         
@@ -312,20 +307,13 @@ class OutboundAssistant(Agent):
     async def on_enter(self):
         greeting = self._live_config.get(
             "first_line",
-            self._first_line or (
-                "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. "
-                "May I ask what kind of business you run?"
-            )
+            self._first_line or "Namaste! This is Aryan from RapidX AI. May I ask what kind of business you run?"
         )
         logger.info(f"[GREETING] Saying: {greeting[:80]}...")
         try:
             await self.session.say(greeting, allow_interruptions=True)
         except Exception as e:
-            logger.error(f"[GREETING] say() failed: {e} — falling back to generate_reply")
-            try:
-                await self.session.generate_reply(instructions=f"Say exactly this phrase: '{greeting}'")
-            except Exception as e2:
-                logger.error(f"[GREETING] generate_reply also failed: {e2}")
+            logger.error(f"[GREETING] say() failed: {e}")
 
 # ─── MAIN RUNNER ──────────────────────────────────────────────────────────────
 agent_is_speaking = False
@@ -349,65 +337,43 @@ async def entrypoint(ctx: JobContext):
     for identity, participant in ctx.room.remote_participants.items():
         if participant.name and participant.name not in ("", "Caller", "Unknown"):
             caller_name = participant.name
-            logger.info(f"[CALLER-ID] Name from SIP: {caller_name}")
         if not phone_number:
             attr = participant.attributes or {}
             phone_number = attr.get("sip.phoneNumber") or attr.get("phoneNumber")
         if not phone_number and "+" in identity:
-            import re as _re
-            m = _re.search(r"\+\d{7,15}", identity)
-            if m:
-                phone_number = m.group()
+            m = re.search(r"\+\d{7,15}", identity)
+            if m: phone_number = m.group()
     caller_phone = phone_number or "unknown"
     
     if is_rate_limited(caller_phone):
-        logger.warning(f"[RATE-LIMIT] Blocked {caller_phone} — too many calls in 1h")
+        logger.warning(f"[RATE-LIMIT] Blocked {caller_phone}")
         return
         
     live_config   = get_live_config(caller_phone)
-    delay_setting = live_config.get("stt_min_endpointing_delay", 0.3)
+    delay_setting = live_config.get("stt_min_endpointing_delay", 0.35)
     llm_model     = live_config.get("llm_model", "llama-3.3-70b-versatile")
-    llm_provider  = live_config.get("llm_provider", "groq")
     tts_voice     = live_config.get("tts_voice", "alloy")
     tts_language  = live_config.get("tts_language", "hi-IN")
-    tts_provider  = live_config.get("tts_provider", "openai")  # Forced OpenAI high definition human voice
-    stt_provider  = live_config.get("stt_provider", "sarvam")
-    stt_language  = live_config.get("stt_language", "unknown")
     max_turns     = live_config.get("max_turns", 25)
     
     for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY",
                 "SARVAM_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY", "GROQ_API_KEY"]:
         val = live_config.get(key.lower(), "")
-        if val:
-            os.environ[key] = val
+        if val: os.environ[key] = val
             
-    async def get_caller_history(phone: str) -> str:
-        if phone == "unknown":
-            return ""
-        try:
-            from db import get_supabase
-            sb = get_supabase()
-            if not sb:
-                return ""
-            result = sb.table("call_logs").select("summary, created_at").eq("phone_number", phone).order("created_at", desc=True).limit(1).execute()
-            if result.data:
-                last = result.data[0]
-                return f"\n\n[CALLER HISTORY: Last call {last['created_at'][:10]}. Summary: {last['summary']}]"
-        except Exception as e:
-            logger.warning(f"[MEMORY] Could not load history: {e}")
-        return ""
+    _openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    _sarvam_key = os.environ.get("SARVAM_API_KEY", "").strip()
+
+    if _openai_key and not _openai_key.startswith("YOUR_"):
+        agent_tts = openai.TTS(model="tts-1", voice=tts_voice or "alloy")
+        logger.info(f"[TTS-ENGINE] Running OpenAI Premium Human Voice: {tts_voice or 'alloy'}")
+    elif _sarvam_key:
+        agent_tts = sarvam.TTS(target_language_code=tts_language, model="bulbul:v3", speaker="kavya", speech_sample_rate=24000)
+        logger.info("[TTS-ENGINE] OpenAI Key absent — Auto-Flipped safely to Sarvam fallback")
+    else:
+        agent_tts = openai.TTS(model="tts-1", voice="alloy")
+        logger.warning("[TTS-ENGINE] Warning: No valid API keys found for Text-to-Speech synthesis.")
         
-    caller_history = await get_caller_history(caller_phone)
-    if caller_history:
-        logger.info(f"[MEMORY] Loaded caller history for {caller_phone}")
-        live_config["agent_instructions"] = (live_config.get("agent_instructions","") + caller_history)
-        
-    agent_tools = AgentTools(caller_phone=caller_phone, caller_name=caller_name)
-    agent_tools._sip_identity = f"sip_{caller_phone.replace('+','')}" if phone_number else "inbound_caller"
-    agent_tools.ctx_api   = ctx.api
-    agent_tools.room_name = ctx.room.name
-    
-    # ── Ultra-Fast Groq Brain Setup ───────────────────────────────────────────
     _groq_api_key = os.environ.get("GROQ_API_KEY", "")
     agent_llm = openai.LLM(
         model=llm_model or "llama-3.3-70b-versatile",
@@ -416,7 +382,6 @@ async def entrypoint(ctx: JobContext):
         max_completion_tokens=150,
     )
     
-    # Groq function validation schema injection patch
     try:
         from livekit.agents.llm._provider_format import openai as _oai_fmt
         _orig_to_fnc_ctx = _oai_fmt.to_fnc_ctx
@@ -429,46 +394,23 @@ async def entrypoint(ctx: JobContext):
                     if "required" in params and not params["required"]:
                         params.pop("required", None)
                     for prop in params.get("properties", {}).values():
-                        if isinstance(prop, dict):
-                            prop.pop("title", None)
+                        if isinstance(prop, dict): prop.pop("title", None)
             return schemas
         _oai_fmt.to_fnc_ctx = _groq_safe_to_fnc_ctx
-    except Exception as _patch_err:
+    except Exception:
         pass
         
-    agent_stt = sarvam.STT(language=stt_language, model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
-        
-    # ── High-Speed Human Voice Pipeline Configuration ─────────────────────────
-    if tts_provider == "openai" or True:  # Enforced human streaming engine
-        agent_tts = openai.TTS(model="tts-1", voice=tts_voice or "alloy")
-        logger.info(f"[TTS] Swapped to OpenAI Human Realism Engine — Voice: {tts_voice or 'alloy'}")
-    else:
-        agent_tts = sarvam.TTS(target_language_code=tts_language, model="bulbul:v3", speaker=tts_voice, speech_sample_rate=24000)
-        
-    turn_count    = 0
+    agent_stt = sarvam.STT(language="unknown", model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
+    turn_count = 0
     interrupt_count = 0
     
     agent = OutboundAssistant(
         agent_tools=agent_tools,
         first_line=live_config.get("first_line", ""),
         live_config=live_config,
-        live_config_loaded=live_config,
         llm_provider="groq",
     )
     
-    try:
-        from livekit.agents import noise_cancellation as nc
-        _noise_cancel = nc.BVC()
-    except Exception:
-        _noise_cancel = None
-        
-    room_input = RoomInputOptions(close_on_disconnect=False)
-    if _noise_cancel:
-        try:
-            room_input = RoomInputOptions(close_on_disconnect=False, noise_cancellation=_noise_cancel)
-        except Exception:
-            room_input = RoomInputOptions(close_on_disconnect=False)
-            
     session = AgentSession(
         stt=agent_stt,
         llm=agent_llm,
@@ -477,7 +419,7 @@ async def entrypoint(ctx: JobContext):
         min_endpointing_delay=float(delay_setting),
         allow_interruptions=True,
     )
-    await session.start(room=ctx.room, agent=agent, room_input_options=room_input)
+    await session.start(room=ctx.room, agent=agent)
     
     try:
         await session.tts.prewarm()
@@ -509,7 +451,7 @@ async def entrypoint(ctx: JobContext):
         egress_id = egress_resp.egress_id
         await rec_api.aclose()
     except Exception as e:
-        logger.warning(f"[RECORDING] Failed to start recording: {e}")
+        logger.warning(f"[RECORDING] Idle: {e}")
         
     async def upsert_active_call(status: str):
         try:
@@ -666,4 +608,47 @@ async def entrypoint(ctx: JobContext):
         if _n8n_url:
             try:
                 import httpx
-                await asyncio.get_event_
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: httpx.post(_n8n_url, json={
+                        "event":         "call_completed",
+                        "phone":         caller_phone,
+                        "caller_name":  agent_tools.caller_name,
+                        "duration":     duration,
+                        "booked":       bool(agent_tools.booking_intent),
+                        "sentiment":    sentiment,
+                        "summary":      booking_status_msg,
+                        "recording_url":recording_url,
+                        "interrupt_count": interrupt_count,
+                    }, timeout=5.0)
+                )
+            except Exception:
+                pass
+                
+        from db import save_call_log
+        try:
+            save_call_log(
+                phone=caller_phone,
+                duration=duration,
+                transcript=transcript_text,
+                summary=booking_status_msg,
+                recording_url=recording_url,
+                caller_name=agent_tools.caller_name or "",
+                sentiment=sentiment,
+                estimated_cost_usd=estimated_cost,
+                call_date=call_dt.date().isoformat(),
+                call_hour=call_dt.hour,
+                call_day_of_week=call_dt.strftime("%A"),
+                was_booked=bool(agent_tools.booking_intent),
+                interrupt_count=interrupt_count,
+            )
+        except Exception as db_err:
+            logger.error(f"[DB] Error writing call log: {db_err}")
+
+    ctx.add_shutdown_callback(unified_shutdown_hook)
+
+if __name__ == "__main__":
+    cli.run_app(WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        agent_name="outbound-caller",
+    ))

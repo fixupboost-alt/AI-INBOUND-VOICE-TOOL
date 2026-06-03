@@ -304,17 +304,6 @@ class OutboundAssistant(Agent):
         
         super().__init__(instructions=final_instructions, tools=tools)
 
-    async def on_enter(self):
-        greeting = self._live_config.get(
-            "first_line",
-            self._first_line or "Namaste! This is Aryan from RapidX AI. May I ask what kind of business you run?"
-        )
-        logger.info(f"[GREETING] Saying: {greeting[:80]}...")
-        try:
-            await self.session.say(greeting, allow_interruptions=True)
-        except Exception as e:
-            logger.error(f"[GREETING] say() failed: {e}")
-
 # ─── MAIN RUNNER ──────────────────────────────────────────────────────────────
 agent_is_speaking = False
 
@@ -351,16 +340,18 @@ async def entrypoint(ctx: JobContext):
         
     live_config   = get_live_config(caller_phone)
     
-    # ── CRITICAL FIX: Instantiate tools right here so they are ALWAYS defined first!
+    # Instantiate tools right away so schemas evaluate first
     agent_tools = AgentTools(caller_phone=caller_phone, caller_name=caller_name)
     agent_tools._sip_identity = f"sip_{caller_phone.replace('+','')}" if phone_number else "inbound_caller"
     agent_tools.ctx_api   = ctx.api
     agent_tools.room_name = ctx.room.name
     
     delay_setting = live_config.get("stt_min_endpointing_delay", 0.35)
-    llm_model     = live_config.get("llm_model", "llama-3.3-70b-versatile")
+    llm_model     = live_config.get("llm_model", "")
+    llm_provider  = live_config.get("llm_provider", "groq")
     tts_voice     = live_config.get("tts_voice", "alloy")
     tts_language  = live_config.get("tts_language", "hi-IN")
+    stt_language  = live_config.get("stt_language", "hi-IN")
     max_turns     = live_config.get("max_turns", 25)
     
     for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY",
@@ -381,33 +372,53 @@ async def entrypoint(ctx: JobContext):
         agent_tts = openai.TTS(model="tts-1", voice="alloy")
         logger.warning("[TTS-ENGINE] Warning: No valid API keys found for Text-to-Speech synthesis.")
         
-    _groq_api_key = os.environ.get("GROQ_API_KEY", "")
-    agent_llm = openai.LLM(
-        model=llm_model or "llama-3.3-70b-versatile",
-        base_url="https://api.groq.com/openai/v1",
-        api_key=_groq_api_key,
-        max_completion_tokens=150,
-    )
-    
-    try:
-        from livekit.agents.llm._provider_format import openai as _oai_fmt
-        _orig_to_fnc_ctx = _oai_fmt.to_fnc_ctx
-        def _groq_safe_to_fnc_ctx(tool_ctx, *, strict=True):
-            schemas = _orig_to_fnc_ctx(tool_ctx, strict=False)
-            for schema in schemas:
-                params = schema.get("function", {}).get("parameters", {})
-                if isinstance(params, dict):
-                    params.pop("title", None)
-                    if "required" in params and not params["required"]:
-                        params.pop("required", None)
-                    for prop in params.get("properties", {}).values():
-                        if isinstance(prop, dict): prop.pop("title", None)
-            return schemas
-        _oai_fmt.to_fnc_ctx = _groq_safe_to_fnc_ctx
-    except Exception:
-        pass
+    # ── Fixed Dynamic LLM Router Block ────────────────────────────────────────
+    if llm_provider == "groq":
+        _groq_api_key = os.environ.get("GROQ_API_KEY", "")
+        agent_llm = openai.LLM(
+            model=llm_model or "llama-3.3-70b-versatile",
+            base_url="https://api.groq.com/openai/v1",
+            api_key=_groq_api_key,
+            max_completion_tokens=150,
+        )
+        logger.info(f"[LLM-ROUTER] Active Brain: Groq LPU Core ({llm_model})")
         
-    agent_stt = sarvam.STT(language="unknown", model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
+        try:
+            from livekit.agents.llm._provider_format import openai as _oai_fmt
+            _orig_to_fnc_ctx = _oai_fmt.to_fnc_ctx
+            def _groq_safe_to_fnc_ctx(tool_ctx, *, strict=True):
+                schemas = _orig_to_fnc_ctx(tool_ctx, strict=False)
+                for schema in schemas:
+                    params = schema.get("function", {}).get("parameters", {})
+                    if isinstance(params, dict):
+                        params.pop("title", None)
+                        if "required" in params and not params["required"]:
+                            params.pop("required", None)
+                        for prop in params.get("properties", {}).values():
+                            if isinstance(prop, dict): prop.pop("title", None)
+                return schemas
+            _oai_fmt.to_fnc_ctx = _groq_safe_to_fnc_ctx
+        except Exception:
+            pass
+    else:
+        # Native OpenAI processing track (Fixes the OpenAI silence conflict loop)
+        agent_llm = openai.LLM(
+            model=llm_model or "gpt-4o-mini", 
+            max_completion_tokens=150
+        )
+        logger.info(f"[LLM-ROUTER] Active Brain: OpenAI Native Pipeline ({llm_model})")
+        
+    # ── Fixed Speech To Text Language Sanitization Block ──────────────────────
+    stt_lang_code = stt_language if stt_language and stt_language != "unknown" else "hi-IN"
+    agent_stt = sarvam.STT(
+        language=stt_lang_code, 
+        model="saaras:v3", 
+        mode="transcribe", 
+        flush_signal=True, 
+        sample_rate=16000
+    )
+    logger.info(f"[STT-ENGINE] Initialized Sarvam listener in language mode: {stt_lang_code}")
+    
     turn_count = 0
     interrupt_count = 0
     
@@ -436,7 +447,7 @@ async def entrypoint(ctx: JobContext):
         agent_tools=agent_tools,
         first_line=live_config.get("first_line", ""),
         live_config=live_config,
-        llm_provider="groq",
+        llm_provider=llm_provider,
     )
     
     session = AgentSession(
@@ -447,12 +458,20 @@ async def entrypoint(ctx: JobContext):
         min_endpointing_delay=float(delay_setting),
         allow_interruptions=True,
     )
-    await session.start(room=ctx.room, agent=agent)
     
+    # ── Fixed Direct Core Pipeline Injection Greeting ─────────────────────────
+    await session.start(room=ctx.room, agent=agent)
+    logger.info("[PIPELINE] Handshake connected successfully.")
+    
+    greeting_phrase = live_config.get(
+        "first_line", 
+        "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. May I ask what kind of business you run?"
+    )
     try:
-        await session.tts.prewarm()
-    except Exception:
-        pass
+        await session.say(greeting_phrase, allow_interruptions=True)
+        logger.info(f"[GREETING-BROADCAST] Sent live stream handshake: {greeting_phrase[:40]}")
+    except Exception as greeting_err:
+        logger.error(f"[GREETING-BROADCAST] Stream failed: {greeting_err}")
         
     call_start_time = datetime.now()
     egress_id = None

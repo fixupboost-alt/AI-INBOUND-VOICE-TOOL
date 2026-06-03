@@ -350,6 +350,13 @@ async def entrypoint(ctx: JobContext):
         return
         
     live_config   = get_live_config(caller_phone)
+    
+    # ── CRITICAL FIX: Instantiate tools right here so they are ALWAYS defined first!
+    agent_tools = AgentTools(caller_phone=caller_phone, caller_name=caller_name)
+    agent_tools._sip_identity = f"sip_{caller_phone.replace('+','')}" if phone_number else "inbound_caller"
+    agent_tools.ctx_api   = ctx.api
+    agent_tools.room_name = ctx.room.name
+    
     delay_setting = live_config.get("stt_min_endpointing_delay", 0.35)
     llm_model     = live_config.get("llm_model", "llama-3.3-70b-versatile")
     tts_voice     = live_config.get("tts_voice", "alloy")
@@ -404,6 +411,27 @@ async def entrypoint(ctx: JobContext):
     turn_count = 0
     interrupt_count = 0
     
+    async def get_caller_history(phone: str) -> str:
+        if phone == "unknown":
+            return ""
+        try:
+            from db import get_supabase
+            sb = get_supabase()
+            if not sb:
+                return ""
+            result = sb.table("call_logs").select("summary, created_at").eq("phone_number", phone).order("created_at", desc=True).limit(1).execute()
+            if result.data:
+                last = result.data[0]
+                return f"\n\n[CALLER HISTORY: Last call {last['created_at'][:10]}. Summary: {last['summary']}]"
+        except Exception as e:
+            logger.warning(f"[MEMORY] Could not load history: {e}")
+        return ""
+        
+    caller_history = await get_caller_history(caller_phone)
+    if caller_history:
+        logger.info(f"[MEMORY] Loaded caller history for {caller_phone}")
+        live_config["agent_instructions"] = (live_config.get("agent_instructions","") + caller_history)
+        
     agent = OutboundAssistant(
         agent_tools=agent_tools,
         first_line=live_config.get("first_line", ""),

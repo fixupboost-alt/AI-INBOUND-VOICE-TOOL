@@ -125,14 +125,6 @@ def get_live_config(phone_number: str | None = None):
         **config,
     }
 
-def count_tokens(text: str) -> int:
-    try:
-        import tiktoken
-        enc = tiktoken.encoding_for_model("gpt-4o")
-        return len(enc.encode(text))
-    except Exception:
-        return len(text.split())
-
 def get_ist_time_context() -> str:
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
@@ -150,24 +142,6 @@ def get_ist_time_context() -> str:
         f"Resolve ALL relative day references using this table:\n{days_block}\n"
         f"Always use ISO dates when calling save_booking_intent. Appointments in IST (+05:30).]"
     )
-
-LANGUAGE_PRESETS = {
-    "hinglish":     {"label": "Hinglish (Hindi+English)", "tts_language": "hi-IN", "tts_voice": "kavya",  "instruction": "Speak in natural Hinglish — mix Hindi and English like educated Indians do. Default to Hindi but use English words when more natural."},
-    "hindi":        {"label": "Hindi",                    "tts_language": "hi-IN", "tts_voice": "ritu",   "instruction": "Speak only in pure Hindi. Avoid English words wherever a Hindi equivalent exists."},
-    "english":      {"label": "English (India)",          "tts_language": "en-IN", "tts_voice": "dev",    "instruction": "Speak only in Indian English with a warm, professional tone."},
-    "tamil":        {"label": "Tamil",                    "tts_language": "ta-IN", "tts_voice": "priya",  "instruction": "Speak only in Tamil. Use standard spoken Tamil for a professional context."},
-    "telugu":       {"label": "Telugu",                   "tts_language": "te-IN", "tts_voice": "kavya",  "instruction": "Speak only in Telugu. Use clear, polite spoken Telugu."},
-    "gujarati":     {"label": "Gujarati",                 "tts_language": "gu-IN", "tts_voice": "rohan",  "instruction": "Speak only in Gujarati. Use polite, professional Gujarati."},
-    "bengali":      {"label": "Bengali",                  "tts_language": "bn-IN", "tts_voice": "neha",   "instruction": "Speak only in Bengali (Bangla). Use standard, polite spoken Bengali."},
-    "marathi":      {"label": "Marathi",                  "tts_language": "mr-IN", "tts_voice": "shubh",  "instruction": "Speak only in Marathi. Use polite, standard spoken Marathi."},
-    "kannada":      {"label": "Kannada",                  "tts_language": "kn-IN", "tts_voice": "rahul",  "instruction": "Speak only in Kannada. Use clear, professional spoken Kannada."},
-    "malayalam":    {"label": "Malayalam",                "tts_language": "ml-IN", "tts_voice": "ritu",   "instruction": "Speak only in Malayalam. Use polite, professional spoken Malayalam."},
-    "multilingual":{"label": "Multilingual (Auto)",     "tts_language": "hi-IN", "tts_voice": "kavya",  "instruction": "Detect the caller's language from their first message and reply in that SAME language for the entire call. Supported: Hindi, Hinglish, English, Tamil, Telugu, Gujarati, Bengali, Marathi, Kannada, Malayalam. Switch if caller switches."},
-}
-
-def get_language_instruction(lang_preset: str) -> str:
-    preset = LANGUAGE_PRESETS.get(lang_preset, LANGUAGE_PRESETS["multilingual"])
-    return f"\n\n[LANGUAGE DIRECTIVE]\n{preset['instruction']}"
 
 from calendar_tools import get_available_slots, create_booking, cancel_booking
 from notify import (
@@ -267,41 +241,10 @@ class AgentTools(llm.ToolContext):
             logger.error(f"[CHECK-AVAILABILITY] failed: {e}")
             return "I can take your appointment directly. What time works best for you?"
 
-    @llm.function_tool(description="Check if the business is currently open and operating.")
-    async def get_business_hours(self, timezone: Annotated[str, "Timezone code"] = "IST") -> str:
-        ist  = pytz.timezone("Asia/Kolkata")
-        now  = datetime.now(ist)
-        hours = {
-            0: ("Monday",    "10:00", "19:00"),
-            1: ("Tuesday",   "10:00", "19:00"),
-            2: ("Wednesday", "10:00", "19:00"),
-            3: ("Thursday",  "10:00", "19:00"),
-            4: ("Friday",    "10:00", "19:00"),
-            5: ("Saturday",  "10:00", "17:00"),
-            6: ("Sunday",    None,    None),
-        }
-        day_name, open_t, close_t = hours[now.weekday()]
-        current_time = now.strftime("%H:%M")
-        if open_t is None:
-            return "We are closed on Sundays. Next opening: Monday 10:00 AM IST."
-        if open_t <= current_time <= close_t:
-            return f"We are OPEN. Today ({day_name}): {open_t}–{close_t} IST."
-        return f"We are CLOSED. Today ({day_name}): {open_t}–{close_t} IST."
-
 # ─── AGENT CLASS ──────────────────────────────────────────────────────────────
 class OutboundAssistant(Agent):
-    def __init__(self, agent_tools: AgentTools, first_line: str = "",
-                 live_config: dict | None = None, llm_provider: str = "groq"):
-        
+    def __init__(self, agent_tools: AgentTools, final_instructions: str):
         tools = llm.find_function_tools(agent_tools)
-        self._first_line  = first_line
-        self._live_config = live_config or {}
-        base_instructions = self._live_config.get("agent_instructions", "")
-        ist_context       = get_ist_time_context()
-        lang_preset       = self._live_config.get("lang_preset", "multilingual")
-        lang_instruction  = get_language_instruction(lang_preset)
-        final_instructions = base_instructions + ist_context + lang_instruction
-        
         super().__init__(instructions=final_instructions, tools=tools)
 
 # ─── MAIN RUNNER ──────────────────────────────────────────────────────────────
@@ -338,9 +281,14 @@ async def entrypoint(ctx: JobContext):
         logger.warning(f"[RATE-LIMIT] Blocked {caller_phone}")
         return
         
-    live_config   = get_live_config(caller_phone)
+    live_config = get_live_config(caller_phone)
     
-    # Instantiate tools right away
+    for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY",
+                "SARVAM_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY", "GROQ_API_KEY"]:
+        val = live_config.get(key.lower(), "")
+        if val: os.environ[key] = val
+            
+    # Instantiate tools cleanly
     agent_tools = AgentTools(caller_phone=caller_phone, caller_name=caller_name)
     agent_tools._sip_identity = f"sip_{caller_phone.replace('+','')}" if phone_number else "inbound_caller"
     agent_tools.ctx_api   = ctx.api
@@ -350,46 +298,50 @@ async def entrypoint(ctx: JobContext):
     llm_model     = live_config.get("llm_model", "")
     llm_provider  = live_config.get("llm_provider", "groq")
     tts_voice     = live_config.get("tts_voice", "alloy")
-    tts_language  = live_config.get("tts_language", "hi-IN")
-    stt_language  = live_config.get("stt_language", "hi-IN")
     max_turns     = live_config.get("max_turns", 25)
     
-    for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY",
-                "SARVAM_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY", "GROQ_API_KEY"]:
-        val = live_config.get(key.lower(), "")
-        if val: os.environ[key] = val
-            
-    _openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    _sarvam_key = os.environ.get("SARVAM_API_KEY", "").strip()
-
-    # ── Bulletproof OpenAI Voice Checker Block ────────────────────────────────
-    OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "sage", "coral"}
+    # ── 🚀 GEOGRAPHIC ROUTING INTERCEPT ──────────────────────────────────────
+    is_uk_caller = caller_phone.startswith("+44") or ctx.room.name.startswith("uk-")
     
-    if _openai_key and not _openai_key.startswith("YOUR_"):
-        target_voice = str(tts_voice).lower().strip() if tts_voice else "alloy"
-        if target_voice not in OPENAI_VOICES:
-            logger.warning(f"[TTS-SANITY] Voice choice '{target_voice}' invalid for OpenAI. Auto-corrected to 'alloy'.")
-            target_voice = "alloy"
-            
-        agent_tts = openai.TTS(model="tts-1", voice=target_voice)
-        logger.info(f"[TTS-ENGINE] Running OpenAI Premium Human Voice: {target_voice}")
-    elif _sarvam_key:
-        agent_tts = sarvam.TTS(target_language_code=tts_language, model="bulbul:v3", speaker="kavya", speech_sample_rate=24000)
-        logger.info("[TTS-ENGINE] OpenAI Key absent — Auto-Flipped safely to Sarvam fallback")
+    if is_uk_caller:
+        logger.info(f"[GEO-ROUTING] Incoming United Kingdom Dial Detected: {caller_phone}")
+        greeting_phrase = "Hi there! Thanks for calling RapidX AI. How can I help automate your business operations today?"
+        agent_instructions = (
+            "You are Oliver, a refined, highly professional British AI sales consultant at RapidX AI. "
+            "Speak ONLY in clear, conversational British English. Use British phrasing and terms naturally "
+            "(e.g., use words like 'brilliant', 'booking', 'calendar slot', 'sorting it out'). Avoid Americanisms. "
+            "Respond with extreme brevity—maximum 10 to 12 words per turn. Be hyper-snappy, direct, and exceptionally polite."
+        )
+        # Use premium OpenAI Whisper listening logic for native British dialect tracing
+        agent_stt = openai.STT()
+        logger.info("[STT-ENGINE] Loaded OpenAI Whisper Core for international dialect tracking.")
     else:
-        agent_tts = openai.TTS(model="tts-1", voice="alloy")
-        logger.warning("[TTS-ENGINE] Warning: No valid API keys found for Text-to-Speech synthesis.")
+        logger.info(f"[GEO-ROUTING] Incoming Domestic Dial Detected: {caller_phone}")
+        greeting_phrase = live_config.get("first_line", "Namaste! This is Aryan from RapidX AI...")
+        agent_instructions = live_config.get("agent_instructions", "")
         
+        # Default to high-performance Sarvam engine for regional Indian/Hinglish calls
+        stt_language = live_config.get("stt_language", "hi-IN")
+        stt_lang_code = stt_language if stt_language and stt_language != "unknown" else "hi-IN"
+        agent_stt = sarvam.STT(language=stt_lang_code, model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
+        logger.info(f"[STT-ENGINE] Loaded Sarvam Indian Pipeline Language: {stt_lang_code}")
+
+    # ── Text to Speech Synthesizer Setup ──────────────────────────────────────
+    OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "sage", "coral"}
+    target_voice = str(tts_voice).lower().strip() if tts_voice else "alloy"
+    if target_voice not in OPENAI_VOICES:
+        target_voice = "alloy"
+        
+    agent_tts = openai.TTS(model="tts-1", voice=target_voice)
+    
+    # ── Brain Provider Selection ──────────────────────────────────────────────
     if llm_provider == "groq":
-        _groq_api_key = os.environ.get("GROQ_API_KEY", "")
         agent_llm = openai.LLM(
             model=llm_model or "llama-3.3-70b-versatile",
             base_url="https://api.groq.com/openai/v1",
-            api_key=_groq_api_key,
+            api_key=os.environ.get("GROQ_API_KEY", ""),
             max_completion_tokens=150,
         )
-        logger.info(f"[LLM-ROUTER] Active Brain: Groq LPU Core ({llm_model})")
-        
         try:
             from livekit.agents.llm._provider_format import openai as _oai_fmt
             _orig_to_fnc_ctx = _oai_fmt.to_fnc_ctx
@@ -408,74 +360,24 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             pass
     else:
-        agent_llm = openai.LLM(
-            model=llm_model or "gpt-4o-mini", 
-            max_completion_tokens=150
-        )
-        logger.info(f"[LLM-ROUTER] Active Brain: OpenAI Native Pipeline ({llm_model})")
-        
-    stt_lang_code = stt_language if stt_language and stt_language != "unknown" else "hi-IN"
-    agent_stt = sarvam.STT(
-        language=stt_lang_code, 
-        model="saaras:v3", 
-        mode="transcribe", 
-        flush_signal=True, 
-        sample_rate=16000
-    )
-    logger.info(f"[STT-ENGINE] Initialized Sarvam listener in language mode: {stt_lang_code}")
-    
-    turn_count = 0
-    interrupt_count = 0
-    
-    async def get_caller_history(phone: str) -> str:
-        if phone == "unknown":
-            return ""
-        try:
-            from db import get_supabase
-            sb = get_supabase()
-            if not sb:
-                return ""
-            result = sb.table("call_logs").select("summary, created_at").eq("phone_number", phone).order("created_at", desc=True).limit(1).execute()
-            if result.data:
-                last = result.data[0]
-                return f"\n\n[CALLER HISTORY: Last call {last['created_at'][:10]}. Summary: {last['summary']}]"
-        except Exception as e:
-            logger.warning(f"[MEMORY] Could not load history: {e}")
-        return ""
-        
-    caller_history = await get_caller_history(caller_phone)
-    if caller_history:
-        logger.info(f"[MEMORY] Loaded caller history for {caller_phone}")
-        live_config["agent_instructions"] = (live_config.get("agent_instructions","") + caller_history)
-        
-    agent = OutboundAssistant(
-        agent_tools=agent_tools,
-        first_line=live_config.get("first_line", ""),
-        live_config=live_config,
-        llm_provider=llm_provider,
-    )
+        agent_llm = openai.LLM(model=llm_model or "gpt-4o-mini", max_completion_tokens=150)
+
+    final_instructions = agent_instructions + get_ist_time_context()
+    agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
     
     session = AgentSession(
-        stt=agent_stt,
-        llm=agent_llm,
-        tts=agent_tts,
-        turn_detection="stt",
-        min_endpointing_delay=float(delay_setting),
-        allow_interruptions=True,
+        stt=agent_stt, llm=agent_llm, tts=agent_tts,
+        turn_detection="stt", min_endpointing_delay=float(delay_setting),
+        allow_interruptions=True
     )
     
     await session.start(room=ctx.room, agent=agent)
-    logger.info("[PIPELINE] Handshake connected successfully.")
     
-    greeting_phrase = live_config.get(
-        "first_line", 
-        "Namaste! This is Aryan from RapidX AI — we help businesses automate with AI. May I ask what kind of business you run?"
-    )
     try:
         await session.say(greeting_phrase, allow_interruptions=True)
-        logger.info(f"[GREETING-BROADCAST] Sent live stream handshake: {greeting_phrase[:40]}")
-    except Exception as greeting_err:
-        logger.error(f"[GREETING-BROADCAST] Stream failed: {greeting_err}")
+        logger.info(f"[GREETING-BROADCAST] Broadcasted dynamic opener: {greeting_phrase[:50]}")
+    except Exception as e:
+        logger.error(f"[GREETING-BROADCAST] Open failed: {e}")
         
     call_start_time = datetime.now()
     egress_id = None
@@ -483,18 +385,13 @@ async def entrypoint(ctx: JobContext):
         rec_api = api.LiveKitAPI(url=os.environ["LIVEKIT_URL"], api_key=os.environ["LIVEKIT_API_KEY"], api_secret=os.environ["LIVEKIT_API_SECRET"])
         egress_resp = await rec_api.egress.start_room_composite_egress(
             api.RoomCompositeEgressRequest(
-                room_name=ctx.room.name,
-                audio_only=True,
+                room_name=ctx.room.name, audio_only=True,
                 file_outputs=[api.EncodedFileOutput(
-                    file_type=api.EncodedFileType.OGG,
-                    filepath=f"recordings/{ctx.room.name}.ogg",
+                    file_type=api.EncodedFileType.OGG, filepath=f"recordings/{ctx.room.name}.ogg",
                     s3=api.S3Upload(
-                        access_key=os.environ["SUPABASE_S3_ACCESS_KEY"],
-                        secret=os.environ["SUPABASE_S3_SECRET_KEY"],
-                        bucket="call-recordings",
-                        region=os.environ.get("SUPABASE_S3_REGION", "ap-south-1"),
-                        endpoint=os.environ["SUPABASE_S3_ENDPOINT"],
-                        force_path_style=True,
+                        access_key=os.environ["SUPABASE_S3_ACCESS_KEY"], secret=os.environ["SUPABASE_S3_SECRET_KEY"],
+                        bucket="call-recordings", region=os.environ.get("SUPABASE_S3_REGION", "ap-south-1"),
+                        endpoint=os.environ["SUPABASE_S3_ENDPOINT"], force_path_style=True,
                     )
                 )]
             )
@@ -510,10 +407,8 @@ async def entrypoint(ctx: JobContext):
             sb = get_supabase()
             if sb:
                 sb.table("active_calls").upsert({
-                    "room_id":     ctx.room.name,
-                    "phone":        caller_phone,
-                    "caller_name": caller_name,
-                    "status":      status,
+                    "room_id": ctx.room.name, "phone": caller_phone,
+                    "caller_name": caller_name, "status": status,
                     "last_updated": datetime.utcnow().isoformat(),
                 }).execute()
         except Exception:
@@ -540,11 +435,8 @@ async def entrypoint(ctx: JobContext):
         global agent_is_speaking
         agent_is_speaking = False
         
-    @session.on("agent_speech_interrupted")
-    def _on_interrupted(ev):
-        nonlocal interrupt_count
-        interrupt_count += 1
-        
+    turn_count = 0
+    interrupt_count = 0
     FILLER_WORDS = {"okay.", "okay", "ok", "uh", "hmm", "hm", "yeah", "yes", "no", "um", "ah", "oh", "right", "sure", "fine", "good"}
     
     @session.on("user_speech_committed")
@@ -553,11 +445,7 @@ async def entrypoint(ctx: JobContext):
         global agent_is_speaking
         transcript = ev.user_transcript.strip()
         transcript_lower = transcript.lower().rstrip(".")
-        if agent_is_speaking:
-            return
-        if not transcript or len(transcript) < 3:
-            return
-        if transcript_lower in FILLER_WORDS:
+        if agent_is_speaking or not transcript or len(transcript) < 3 or transcript_lower in FILLER_WORDS:
             return
         asyncio.create_task(_log_transcript("user", transcript))
         turn_count += 1
@@ -579,38 +467,28 @@ async def entrypoint(ctx: JobContext):
             from calendar_tools import async_create_booking
             intent = agent_tools.booking_intent
             result = await async_create_booking(
-                start_time=intent["start_time"],
-                caller_name=intent["caller_name"] or "Unknown Caller",
-                caller_phone=intent["caller_phone"],
-                notes=intent["notes"],
+                start_time=intent["start_time"], caller_name=intent["caller_name"] or "Unknown Caller",
+                caller_phone=intent["caller_phone"], notes=intent["notes"],
             )
             if result.get("success"):
                 notify_booking_confirmed(
-                    caller_name=intent["caller_name"],
-                    caller_phone=intent["caller_phone"],
-                    booking_time_iso=intent["start_time"],
-                    booking_id=result.get("booking_id"),
-                    notes=intent["notes"],
-                    tts_voice=tts_voice,
-                    ai_summary="",
+                    caller_name=intent["caller_name"], caller_phone=intent["caller_phone"],
+                    booking_time_iso=intent["start_time"], booking_id=result.get("booking_id"),
+                    notes=intent["notes"], tts_voice=target_voice, ai_summary="",
                 )
                 booking_status_msg = f"Booking Confirmed: {result.get('booking_id')}"
             else:
                 booking_status_msg = f"Booking Failed: {result.get('message')}"
         else:
             notify_call_no_booking(
-                caller_name=agent_tools.caller_name,
-                caller_phone=agent_tools.caller_phone,
-                call_summary="Caller did not schedule during this call.",
-                tts_voice=tts_voice,
-                duration_seconds=duration,
+                caller_name=agent_tools.caller_name, caller_phone=agent_tools.caller_phone,
+                call_summary="Caller did not schedule during this call.", tts_voice=target_voice, duration_seconds=duration,
             )
             
         transcript_text = ""
         try:
             messages = agent.chat_ctx.messages
-            if callable(messages):
-                messages = messages()
+            if callable(messages): messages = messages()
             lines = []
             for msg in messages:
                 if getattr(msg, "role", None) in ("user", "assistant"):
@@ -634,23 +512,6 @@ async def entrypoint(ctx: JobContext):
                 )
                 sentiment = resp.choices[0].message.content.strip().lower()
             except Exception:
-                sentiment = "unknown"
-                
-        def estimate_cost(dur: int, chars: int) -> float:
-            return round((dur / 60) * 0.002 + (dur / 60) * 0.006 + (chars / 1000) * 0.003 + (chars / 4000) * 0.0001, 5)
-            
-        estimated_cost = estimate_cost(duration, len(transcript_text))
-        ist = pytz.timezone("Asia/Kolkata")
-        call_dt = call_start_time.astimezone(ist)
-        
-        recording_url = ""
-        if egress_id:
-            try:
-                stop_api = api.LiveKitAPI(url=os.environ["LIVEKIT_URL"], api_key=os.environ["LIVEKIT_API_KEY"], api_secret=os.environ["LIVEKIT_API_SECRET"])
-                await stop_api.egress.stop_egress(api.StopEgressRequest(egress_id=egress_id))
-                await stop_api.aclose()
-                recording_url = f"{os.environ.get('SUPABASE_URL','')}/storage/v1/object/public/call-recordings/recordings/{ctx.room.name}.ogg"
-            except Exception:
                 pass
                 
         await upsert_active_call("completed")
@@ -660,16 +521,10 @@ async def entrypoint(ctx: JobContext):
             try:
                 import httpx
                 await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: httpx.post(_n8n_url, json={
-                        "event":         "call_completed",
-                        "phone":         caller_phone,
-                        "caller_name":  agent_tools.caller_name,
-                        "duration":     duration,
-                        "booked":       bool(agent_tools.booking_intent),
-                        "sentiment":    sentiment,
-                        "summary":      booking_status_msg,
-                        "recording_url":recording_url,
+                    None, lambda: httpx.post(_n8n_url, json={
+                        "event": "call_completed", "phone": caller_phone, "caller_name": agent_tools.caller_name,
+                        "duration": duration, "booked": bool(agent_tools.booking_intent), "sentiment": sentiment,
+                        "summary": booking_status_msg, "recording_url": f"{os.environ.get('SUPABASE_URL','')}/storage/v1/object/public/call-recordings/recordings/{ctx.room.name}.ogg" if egress_id else "",
                         "interrupt_count": interrupt_count,
                     }, timeout=5.0)
                 )
@@ -679,27 +534,18 @@ async def entrypoint(ctx: JobContext):
         from db import save_call_log
         try:
             save_call_log(
-                phone=caller_phone,
-                duration=duration,
-                transcript=transcript_text,
-                summary=booking_status_msg,
-                recording_url=recording_url,
-                caller_name=agent_tools.caller_name or "",
-                sentiment=sentiment,
-                estimated_cost_usd=estimated_cost,
-                call_date=call_dt.date().isoformat(),
-                call_hour=call_dt.hour,
-                call_day_of_week=call_dt.strftime("%A"),
-                was_booked=bool(agent_tools.booking_intent),
-                interrupt_count=interrupt_count,
+                phone=caller_phone, duration=duration, transcript=transcript_text, summary=booking_status_msg,
+                recording_url=f"{os.environ.get('SUPABASE_URL','')}/storage/v1/object/public/call-recordings/recordings/{ctx.room.name}.ogg" if egress_id else "",
+                caller_name=agent_tools.caller_name or "", sentiment=sentiment, estimated_cost_usd=round((duration/60)*0.008, 4),
+                call_date=datetime.now(pytz.timezone("Asia/Kolkata")).date().isoformat(),
+                call_hour=datetime.now(pytz.timezone("Asia/Kolkata")).hour,
+                call_day_of_week=datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%A"),
+                was_booked=bool(agent_tools.booking_intent), interrupt_count=interrupt_count,
             )
-        except Exception as db_err:
-            logger.error(f"[DB] Error writing call log: {db_err}")
+        except Exception:
+            pass
 
     ctx.add_shutdown_callback(unified_shutdown_hook)
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(
-        entrypoint_fnc=entrypoint,
-        agent_name="outbound-caller",
-    ))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, agent_name="outbound-caller"))

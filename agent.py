@@ -366,11 +366,26 @@ async def entrypoint(ctx: JobContext):
     final_instructions = agent_instructions + get_ist_time_context()
     agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
     
-    session = AgentSession(
-        stt=agent_stt, llm=agent_llm, tts=agent_tts,
-        turn_detection="stt", min_endpointing_delay=float(delay_setting),
-        allow_interruptions=True
-    )
+    # ── 🎛️ ADAPTIVE TURN DETECTION ENGINE ─────────────────────────────────────
+    if is_uk_caller:
+        # OpenAI Whisper needs local Silero VAD to track silence and know when you finish talking
+        session = AgentSession(
+            stt=agent_stt, llm=agent_llm, tts=agent_tts,
+            vad=silero.VAD.load(),
+            turn_detection="vad",
+            min_endpointing_delay=float(delay_setting),
+            allow_interruptions=True
+        )
+        logger.info("[SESSION] Initialized OpenAI STT with Silero VAD tracking loop.")
+    else:
+        # Sarvam handles its own server-side endpointing perfectly
+        session = AgentSession(
+            stt=agent_stt, llm=agent_llm, tts=agent_tts,
+            turn_detection="stt",
+            min_endpointing_delay=float(delay_setting),
+            allow_interruptions=True
+        )
+        logger.info("[SESSION] Initialized Sarvam with default Server-Side STT tracking loop.")
     
     await session.start(room=ctx.room, agent=agent)
     

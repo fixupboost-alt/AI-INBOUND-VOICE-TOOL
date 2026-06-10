@@ -301,10 +301,11 @@ async def entrypoint(ctx: JobContext):
     max_turns     = live_config.get("max_turns", 25)
     
     # ── 🚀 GEOGRAPHIC ROUTING INTERCEPT ──────────────────────────────────────
-    is_uk_caller = caller_phone.startswith("+44") or ctx.room.name.startswith("uk-")
+    # Strategy 2: Direct routing filter based on caller identities and room tags
+    is_uk_caller = caller_phone.startswith("+44") or ctx.room.name.startswith("uk-") or "9890767581" in caller_phone
     
     if is_uk_caller:
-        logger.info(f"[GEO-ROUTING] Incoming United Kingdom Dial Detected: {caller_phone}")
+        logger.info(f"[GEO-ROUTING] UK Mode Engaged for Caller: {caller_phone}")
         greeting_phrase = "Hi there! Thanks for calling RapidX AI. How can I help automate your business operations today?"
         agent_instructions = (
             "You are Oliver, a refined, highly professional British AI sales consultant at RapidX AI. "

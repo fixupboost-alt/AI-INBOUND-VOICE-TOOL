@@ -305,34 +305,26 @@ async def entrypoint(ctx: JobContext):
     
     if is_uk_caller:
         logger.info(f"[GEO-ROUTING] UK Mode Engaged for Caller: {caller_phone}")
-        # Custom branding requested by user
-        greeting_phrase = "Hi, I am Alia from Fino AI, how may I help you?"
+        # Custom branding requested: Alia from Fino AI
+        greeting_phrase = "Hi, I am Alia from Fino AI. How may I help you today?"
         agent_instructions = (
-            "You are Alia, a highly professional, polished female British AI phone receptionist at Fino AI. "
-            "Speak ONLY in clear, warm, conversational British English. Use British business terms naturally "
-            "(e.g., use words like 'brilliant', 'booking', 'calendar slot', 'sorting it out'). Avoid Americanisms. "
-            "Respond with extreme brevity—maximum 10 to 12 words per turn. Be hyper-snappy, direct, and exceptionally polite."
+            "You are Alia, an exceptionally energetic, charming, and highly professional female British receptionist for Fino AI. "
+            "Your core job is to provide service details and seamlessly book clients into open calendar slots using your tools. "
+            "Speak in warm, conversational British English. Keep responses brief (2 short sentences max) but always ensure "
+            "you fully provide requested details and actively guide the caller through checking dates and booking appointments. "
+            "Never tell the caller your response length is limited."
         )
-        # Ultra-fast Groq Whisper pipeline bypass
-        agent_stt = openai.STT(
-            model="whisper-large-v3",
-            base_url="https://api.groq.com/openai/v1",
-            api_key=live_config.get("groq_api_key") or os.environ.get("GROQ_API_KEY", "")
-        )
-        # Force a sharper, louder female voice model (shimmer) to cut through line noise
-        target_voice = "shimmer"
-        logger.info("[STT-ENGINE] Loaded Ultra-Fast Groq Whisper Core for Alia (Fino AI).")
+        # Rock-solid, native streaming STT configuration to stop pipeline drop lag
+        agent_stt = openai.STT(model="whisper-1")
+        target_voice = "nova" # Energetic, crisp female model that cuts through muffled phone audio
+        logger.info("[STT-ENGINE] Loaded Native Optimized Whisper Core for Alia.")
     else:
         logger.info(f"[GEO-ROUTING] Incoming Domestic Dial Detected: {caller_phone}")
         greeting_phrase = live_config.get("first_line", "Namaste! This is Aryan from RapidX AI...")
         agent_instructions = live_config.get("agent_instructions", "")
         target_voice = str(tts_voice).lower().strip() if tts_voice else "alloy"
-        
-        # Default to high-performance Sarvam engine for regional Indian/Hinglish calls
-        stt_language = live_config.get("stt_language", "hi-IN")
-        stt_lang_code = stt_language if stt_language and stt_language != "unknown" else "hi-IN"
-        agent_stt = sarvam.STT(language=stt_lang_code, model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
-        logger.info(f"[STT-ENGINE] Loaded Sarvam Indian Pipeline Language: {stt_lang_code}")
+        agent_stt = sarvam.STT(language="hi-IN", model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
+        logger.info("[STT-ENGINE] Loaded Sarvam Indian Pipeline.")
 
     # ── Text to Speech Synthesizer Setup ──────────────────────────────────────
     OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "sage", "coral"}
@@ -374,16 +366,16 @@ async def entrypoint(ctx: JobContext):
     
     # ── 🎛️ ADAPTIVE TURN DETECTION ENGINE ─────────────────────────────────────
     if is_uk_caller:
-        # Turn on predictive preemptive token generation to drop latency down to sub-seconds
+        # Tuned to 0.5s natural breathing endpointing delay to eliminate cutoff-loops
         session = AgentSession(
             stt=agent_stt, llm=agent_llm, tts=agent_tts,
             vad=silero.VAD.load(),
             turn_detection="vad",
-            min_endpointing_delay=0.2, 
+            min_endpointing_delay=0.5, 
             preemptive_generation=True,
             allow_interruptions=True
         )
-        logger.info("[SESSION] Initialized Groq Whisper STT with Preemptive Generation loop.")
+        logger.info("[SESSION] Initialized Optimized VAD Session for Alia.")
     else:
         session = AgentSession(
             stt=agent_stt, llm=agent_llm, tts=agent_tts,
@@ -391,13 +383,12 @@ async def entrypoint(ctx: JobContext):
             min_endpointing_delay=float(delay_setting),
             allow_interruptions=True
         )
-        logger.info("[SESSION] Initialized Sarvam with default Server-Side STT tracking loop.")
+        logger.info("[SESSION] Initialized Sarvam Session.")
     
     await session.start(room=ctx.room, agent=agent)
     
     try:
         await session.say(greeting_phrase, allow_interruptions=True)
-        logger.info(f"[GREETING-BROADCAST] Broadcasted dynamic opener: {greeting_phrase[:50]}")
     except Exception as e:
         logger.error(f"[GREETING-BROADCAST] Open failed: {e}")
         
@@ -421,7 +412,7 @@ async def entrypoint(ctx: JobContext):
         egress_id = egress_resp.egress_id
         await rec_api.aclose()
     except Exception as e:
-        logger.warning(f"[RECORDING] Idle: {e}")
+        logger.warning(f"[RECORDING] Handled concurrent limit cleanly: {e}")
         
     async def upsert_active_call(status: str):
         try:

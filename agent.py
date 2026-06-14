@@ -313,9 +313,13 @@ async def entrypoint(ctx: JobContext):
             "(e.g., use words like 'brilliant', 'booking', 'calendar slot', 'sorting it out'). Avoid Americanisms. "
             "Respond with extreme brevity—maximum 10 to 12 words per turn. Be hyper-snappy, direct, and exceptionally polite."
         )
-        # Use premium OpenAI Whisper listening logic for native British dialect tracing
-        agent_stt = openai.STT()
-        logger.info("[STT-ENGINE] Loaded OpenAI Whisper Core for international dialect tracking.")
+        # ⚡ SPEED UP: Route the OpenAI STT plugin directly into Groq's ultra-fast Whisper engine
+        agent_stt = openai.STT(
+            model="whisper-large-v3",
+            base_url="https://api.groq.com/openai/v1",
+            api_key=live_config.get("groq_api_key") or os.environ.get("GROQ_API_KEY", "")
+        )
+        logger.info("[STT-ENGINE] Loaded Ultra-Fast Groq Whisper Core for international dialect tracking.")
     else:
         logger.info(f"[GEO-ROUTING] Incoming Domestic Dial Detected: {caller_phone}")
         greeting_phrase = live_config.get("first_line", "Namaste! This is Aryan from RapidX AI...")
@@ -368,15 +372,15 @@ async def entrypoint(ctx: JobContext):
     
     # ── 🎛️ ADAPTIVE TURN DETECTION ENGINE ─────────────────────────────────────
     if is_uk_caller:
-        # OpenAI Whisper needs local Silero VAD to track silence and know when you finish talking
+        # Groq Whisper needs local Silero VAD to track silence and know when you finish talking
         session = AgentSession(
             stt=agent_stt, llm=agent_llm, tts=agent_tts,
             vad=silero.VAD.load(),
             turn_detection="vad",
-            min_endpointing_delay=float(delay_setting),
+            min_endpointing_delay=0.2, # ⚡ SPEED UP: Cut the pause tracking window down to 200ms
             allow_interruptions=True
         )
-        logger.info("[SESSION] Initialized OpenAI STT with Silero VAD tracking loop.")
+        logger.info("[SESSION] Initialized Groq Whisper STT with ultra-fast 200ms Silero VAD tracking loop.")
     else:
         # Sarvam handles its own server-side endpointing perfectly
         session = AgentSession(

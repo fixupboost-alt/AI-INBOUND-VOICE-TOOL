@@ -301,29 +301,32 @@ async def entrypoint(ctx: JobContext):
     max_turns     = live_config.get("max_turns", 25)
     
     # ── 🚀 GEOGRAPHIC ROUTING INTERCEPT ──────────────────────────────────────
-    # Strategy 2: Direct routing filter based on caller identities and room tags
     is_uk_caller = caller_phone.startswith("+44") or ctx.room.name.startswith("uk-") or "9890767581" in caller_phone
     
     if is_uk_caller:
         logger.info(f"[GEO-ROUTING] UK Mode Engaged for Caller: {caller_phone}")
-        greeting_phrase = "Hi there! Thanks for calling RapidX AI. How can I help automate your business operations today?"
+        # Custom branding requested by user
+        greeting_phrase = "Hi, I am Alia from Fino AI, how may I help you?"
         agent_instructions = (
-            "You are Oliver, a refined, highly professional British AI sales consultant at RapidX AI. "
-            "Speak ONLY in clear, conversational British English. Use British phrasing and terms naturally "
+            "You are Alia, a highly professional, polished female British AI phone receptionist at Fino AI. "
+            "Speak ONLY in clear, warm, conversational British English. Use British business terms naturally "
             "(e.g., use words like 'brilliant', 'booking', 'calendar slot', 'sorting it out'). Avoid Americanisms. "
             "Respond with extreme brevity—maximum 10 to 12 words per turn. Be hyper-snappy, direct, and exceptionally polite."
         )
-        # ⚡ SPEED UP: Route the OpenAI STT plugin directly into Groq's ultra-fast Whisper engine
+        # Ultra-fast Groq Whisper pipeline bypass
         agent_stt = openai.STT(
             model="whisper-large-v3",
             base_url="https://api.groq.com/openai/v1",
             api_key=live_config.get("groq_api_key") or os.environ.get("GROQ_API_KEY", "")
         )
-        logger.info("[STT-ENGINE] Loaded Ultra-Fast Groq Whisper Core for international dialect tracking.")
+        # Force a sharper, louder female voice model (shimmer) to cut through line noise
+        target_voice = "shimmer"
+        logger.info("[STT-ENGINE] Loaded Ultra-Fast Groq Whisper Core for Alia (Fino AI).")
     else:
         logger.info(f"[GEO-ROUTING] Incoming Domestic Dial Detected: {caller_phone}")
         greeting_phrase = live_config.get("first_line", "Namaste! This is Aryan from RapidX AI...")
         agent_instructions = live_config.get("agent_instructions", "")
+        target_voice = str(tts_voice).lower().strip() if tts_voice else "alloy"
         
         # Default to high-performance Sarvam engine for regional Indian/Hinglish calls
         stt_language = live_config.get("stt_language", "hi-IN")
@@ -333,7 +336,6 @@ async def entrypoint(ctx: JobContext):
 
     # ── Text to Speech Synthesizer Setup ──────────────────────────────────────
     OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "sage", "coral"}
-    target_voice = str(tts_voice).lower().strip() if tts_voice else "alloy"
     if target_voice not in OPENAI_VOICES:
         target_voice = "alloy"
         
@@ -372,17 +374,17 @@ async def entrypoint(ctx: JobContext):
     
     # ── 🎛️ ADAPTIVE TURN DETECTION ENGINE ─────────────────────────────────────
     if is_uk_caller:
-        # Groq Whisper needs local Silero VAD to track silence and know when you finish talking
+        # Turn on predictive preemptive token generation to drop latency down to sub-seconds
         session = AgentSession(
             stt=agent_stt, llm=agent_llm, tts=agent_tts,
             vad=silero.VAD.load(),
             turn_detection="vad",
-            min_endpointing_delay=0.2, # ⚡ SPEED UP: Cut the pause tracking window down to 200ms
+            min_endpointing_delay=0.2, 
+            preemptive_generation=True,
             allow_interruptions=True
         )
-        logger.info("[SESSION] Initialized Groq Whisper STT with ultra-fast 200ms Silero VAD tracking loop.")
+        logger.info("[SESSION] Initialized Groq Whisper STT with Preemptive Generation loop.")
     else:
-        # Sarvam handles its own server-side endpointing perfectly
         session = AgentSession(
             stt=agent_stt, llm=agent_llm, tts=agent_tts,
             turn_detection="stt",

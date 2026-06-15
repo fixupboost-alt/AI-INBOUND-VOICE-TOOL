@@ -40,9 +40,8 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     llm,
-    VoiceAssistant,  # 🎯 PRODUCTION FIX: Imported directly from root to eliminate ModuleNotFoundError
+    VoicePipelineAgent,  # 🎯 BACKWARD COMPATIBILITY FIX: Swapped to VoicePipelineAgent to resolve older package setup blocks
 )
-from livekit.agents.voice_assistant import turn_detector
 from livekit.plugins import openai, silero, deepgram, cartesia
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -143,7 +142,6 @@ class AgentTools(llm.ToolContext):
         clean_date = date.split("T")[0] if "T" in date else date
         try:
             loop = asyncio.get_event_loop()
-            # Wrap synchronous network calculations inside a strict 3.5s execution guard
             slots = await asyncio.wait_for(
                 loop.run_in_executor(None, get_available_slots, clean_date),
                 timeout=3.5
@@ -254,13 +252,13 @@ async def entrypoint(ctx: JobContext):
         "- RUN TOOLS SILENTLY. Never say 'checking function' or 'running script' out loud. Keep conversations moving natively."
     )
 
-    # ⚡ SUB-50MS MULTI-LANGUAGE EAR: Deepgram Nova-2 Streaming WebSockets
+    # ⚡ MULTI-LANGUAGE EAR: Deepgram Nova-2 Streaming WebSockets
     agent_stt = deepgram.STT(
         model="nova-2-general",
         language="multi"
     )
     
-    # 🎯 FIX: Native OpenAI brain explicitly bound to our custom tools model instance
+    # Native OpenAI brain for clean tool routing execution
     agent_llm = openai.LLM(
         model="gpt-4o-mini", 
         max_completion_tokens=120,
@@ -276,16 +274,13 @@ async def entrypoint(ctx: JobContext):
 
     final_instructions = agent_instructions + get_ist_time_context()
     
-    # ── ASYNCHRONOUS VOICEASSISTANT RUNTIME ARCHITECTURE ─────────────────────
-    assistant = VoiceAssistant(
+    # ── COMPATIBLE VOICEPIPELINEAGENT RUNTIME ARCHITECTURE ───────────────────
+    assistant = VoicePipelineAgent(
         vad=silero.VAD.load(),
         stt=agent_stt,
         llm=agent_llm,
         tts=agent_tts,
         chat_ctx=llm.ChatContext().append(role="system", text=final_instructions),
-        turn_detector=turn_detector.TurnHandlingOptions(
-            mode="adaptive",
-        ),
         allow_interruptions=True,
         preemptive_generation=True
     )

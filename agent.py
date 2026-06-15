@@ -43,7 +43,7 @@ from livekit.agents import (
 )
 from livekit.agents.pipeline import VoiceAssistant
 from livekit.agents.voice_assistant import turn_detector
-from livekit.plugins import openai, silero, deepgram, cartesia
+from livekit.plugins import openai, silero, deepgram
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
@@ -95,7 +95,6 @@ def get_live_config(phone_number: str | None = None):
         "livekit_api_secret":        config.get("livekit_api_secret", env("LIVEKIT_API_SECRET")),
         "openai_api_key":            config.get("openai_api_key",     env("OPENAI_API_KEY")),
         "deepgram_api_key":          config.get("deepgram_api_key",   env("DEEPGRAM_API_KEY")),
-        "cartesia_api_key":          config.get("cartesia_api_key",   env("CARTESIA_API_KEY")),
         "cal_api_key":               config.get("cal_api_key",        env("CAL_API_KEY")),
         "cal_event_type_id":         config.get("cal_event_type_id",  env("CAL_EVENT_TYPE_ID")),
         "telegram_bot_token":        config.get("telegram_bot_token", env("TELEGRAM_BOT_TOKEN")),
@@ -187,12 +186,6 @@ class AgentTools(llm.ToolContext):
             logger.error(f"[TOOL-FAULT] Intent log crash: {e}")
             return "Details saved."
 
-# ─── AGENT WORKER FRAMEWORK ───────────────────────────────────────────────────
-class OutboundAssistant(Agent):
-    def __init__(self, agent_tools: AgentTools, final_instructions: str):
-        tools = llm.find_function_tools(agent_tools)
-        super().__init__(instructions=final_instructions, tools=tools)
-
 # ─── CONVERSATIONAL ENGINE ENTRYPOINT ─────────────────────────────────────────
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
@@ -225,7 +218,7 @@ async def entrypoint(ctx: JobContext):
         return
         
     live_config = get_live_config(caller_phone)
-    for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY", "CARTESIA_API_KEY"]:
+    for key in ["LIVEKIT_URL","LIVEKIT_API_KEY","LIVEKIT_API_SECRET","OPENAI_API_KEY","CAL_API_KEY","TELEGRAM_BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY"]:
         val = live_config.get(key.lower(), "")
         if val: os.environ[key] = val
             
@@ -265,27 +258,28 @@ async def entrypoint(ctx: JobContext):
         language="multi"
     )
     
-    # Native OpenAI brain for leak-free tool calls
-    agent_llm = openai.LLM(model="gpt-4o-mini", max_completion_tokens=120)
+    # 🎯 FIX: Native OpenAI brain bound directly to our tool framework instance
+    agent_llm = openai.LLM(
+        model="gpt-4o-mini", 
+        max_completion_tokens=120,
+        fnc_ctx=agent_tools
+    )
     
-    # 🔊 VAPI-SPEED AUDIO ENGINE: Cartesia Low-Latency WebSocket Audio Output
-    # Uses 'sonic-english' for fast pronunciation on both clear English and Indian accents/names
-    target_voice_id = "bdf230d4-bf66-4170-a1a6-d73149f847db" # Crystal clear, corporate voice profile
-    agent_tts = cartesia.TTS(
-        model="sonic-english",
-        voice=target_voice_id
+    # 🔊 BILINGUAL TELEPHONY VOX: OpenAI High-Definition (tts-1-hd) with Nova profile
+    agent_tts = openai.TTS(
+        model="tts-1-hd",
+        voice="nova"
     )
 
     final_instructions = agent_instructions + get_ist_time_context()
-    agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
     
-    # ── NATIVE ASYNCHRONOUS VOICEASSISTANT ARCHITECTURE ──────────────────────
+    # ── FIXED ASYNCHRONOUS VOICEASSISTANT ARCHITECTURE ──────────────────────
     assistant = VoiceAssistant(
         vad=silero.VAD.load(),
         stt=agent_stt,
         llm=agent_llm,
         tts=agent_tts,
-        fnc_ctx=agent_tools,
+        chat_ctx=llm.ChatContext().append(role="system", text=final_instructions),
         turn_detector=turn_detector.TurnHandlingOptions(
             mode="adaptive",
         ),
@@ -353,7 +347,7 @@ async def entrypoint(ctx: JobContext):
             return
         asyncio.create_task(_log_transcript("user", transcript))
             
-    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, "cartesia_sonic"))
+    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, "openai_hd_nova"))
 
 async def unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, target_voice):
     logger.info("[SHUTDOWN] Executing pipeline sync updates.")

@@ -143,7 +143,6 @@ class AgentTools(llm.ToolContext):
         clean_date = date.split("T")[0] if "T" in date else date
         try:
             loop = asyncio.get_event_loop()
-            # Wrap standard execution inside a strict asynchronous wait shield to protect media loop
             slots = await asyncio.wait_for(
                 loop.run_in_executor(None, get_available_slots, clean_date),
                 timeout=3.5
@@ -260,18 +259,18 @@ async def entrypoint(ctx: JobContext):
         "- RUN TOOLS SILENTLY. Never say 'checking function' or 'running script' out loud. Keep conversations moving natively."
     )
 
-    # ⚡ SUB-50MS MULTI-LANGUAGE EAR: Deepgram Nova-2 Streaming WebSockets
+    # ⚡ MILLISECOND MULTI-LANGUAGE EAR: Deepgram Nova-2 Streaming WebSockets
     agent_stt = deepgram.STT(
         model="nova-2-general",
         language="multi"
     )
     
-    # Native OpenAI brain for leak-free, clean tool routing execution
+    # Native OpenAI brain for leak-free tool calls
     agent_llm = openai.LLM(model="gpt-4o-mini", max_completion_tokens=120)
     
-    # 🔊 ULTRA-LOW LATENCY STREAMING VOICE: Cartesia Sonic API Core Pipeline
-    # Uses 'sonic-english' to maximize performance on global accents and mixed Hinglish loops
-    target_voice_id = "bdf230d4-bf66-4170-a1a6-d73149f847db" # Fast, high-treble professional female voice
+    # 🔊 VAPI-SPEED AUDIO ENGINE: Cartesia Low-Latency WebSocket Audio Output
+    # Uses 'sonic-english' for fast pronunciation on both clear English and Indian accents/names
+    target_voice_id = "bdf230d4-bf66-4170-a1a6-d73149f847db" # Crystal clear, corporate voice profile
     agent_tts = cartesia.TTS(
         model="sonic-english",
         voice=target_voice_id
@@ -280,7 +279,7 @@ async def entrypoint(ctx: JobContext):
     final_instructions = agent_instructions + get_ist_time_context()
     agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
     
-    # ── NEW ASYNCHRONOUS VOICEASSISTANT ARCHITECTURE ──────────────────────────
+    # ── NATIVE ASYNCHRONOUS VOICEASSISTANT ARCHITECTURE ──────────────────────
     assistant = VoiceAssistant(
         vad=silero.VAD.load(),
         stt=agent_stt,

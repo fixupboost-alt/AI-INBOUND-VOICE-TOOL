@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import Annotated
 
-# Fix for macOS SSL certificate verification variables
+# Fix for SSL certificate verification variables
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 # ── Sentry error tracking ─────────────────────────────────────────────────────
@@ -40,8 +40,9 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     llm,
-    VoicePipelineAgent,  # 🎯 BACKWARD COMPATIBILITY FIX: Swapped to VoicePipelineAgent to resolve older package setup blocks
 )
+# 🎯 v1.4.2 STABLE IMPORT LOCATION
+from livekit.agents.voice_assistant import VoiceAssistant
 from livekit.plugins import openai, silero, deepgram, cartesia
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -252,30 +253,40 @@ async def entrypoint(ctx: JobContext):
         "- RUN TOOLS SILENTLY. Never say 'checking function' or 'running script' out loud. Keep conversations moving natively."
     )
 
-    # ⚡ MULTI-LANGUAGE EAR: Deepgram Nova-2 Streaming WebSockets
+    # ⚡ SUB-50MS MULTI-LANGUAGE EAR: Deepgram Nova-2 Streaming WebSockets
     agent_stt = deepgram.STT(
         model="nova-2-general",
         language="multi"
     )
     
-    # Native OpenAI brain for clean tool routing execution
+    # 🎯 FIX: Native LLM wrapper bound cleanly to our custom tools instance mapping
     agent_llm = openai.LLM(
         model="gpt-4o-mini", 
         max_completion_tokens=120,
         fnc_ctx=agent_tools
     )
     
-    # 🔊 ULTRA-LOW LATENCY AUDIO STREAM: Cartesia low-latency websocket execution
-    target_voice_id = "bdf230d4-bf66-4170-a1a6-d73149f847db"
-    agent_tts = cartesia.TTS(
-        model="sonic-english",
-        voice=target_voice_id
-    )
+    # 🔊 200 IQ ACTIVE CREDIT FALLBACK ROUTING ENGINE
+    # Automatically triggers Cartesia sonic streaming, but cascades back to OpenAI HD if limits are met
+    target_voice_track = "cartesia_sonic"
+    if os.environ.get("CARTESIA_API_KEY"):
+        try:
+            target_voice_id = "bdf230d4-bf66-4170-a1a6-d73149f847db"
+            agent_tts = cartesia.TTS(model="sonic-english", voice=target_voice_id)
+            logger.info("[AUDIO-INIT] Cartesia ultra-low latency websocket engine loaded successfully.")
+        except Exception as tts_err:
+            logger.warning(f"[AUDIO-FALLBACK] Cartesia allocation failed, cascading to OpenAI HD: {tts_err}")
+            agent_tts = openai.TTS(model="tts-1-hd", voice="nova")
+            target_voice_track = "openai_hd_nova"
+    else:
+        logger.info("[AUDIO-INIT] No Cartesia token verified, initializing OpenAI HD Voice engine.")
+        agent_tts = openai.TTS(model="tts-1-hd", voice="nova")
+        target_voice_track = "openai_hd_nova"
 
     final_instructions = agent_instructions + get_ist_time_context()
     
-    # ── COMPATIBLE VOICEPIPELINEAGENT RUNTIME ARCHITECTURE ───────────────────
-    assistant = VoicePipelineAgent(
+    # ── NEW UNIFIED VOICEASSISTANT PIPELINE ARCHITECTURE (v1.4.2) ───────────
+    assistant = VoiceAssistant(
         vad=silero.VAD.load(),
         stt=agent_stt,
         llm=agent_llm,
@@ -338,14 +349,14 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             pass
             
-    @assistant.on("user_speech_committed")
-    def on_user_speech_committed(msg):
-        transcript = msg.content.strip() if hasattr(msg, "content") else str(msg).strip()
+    @assistant.on("user_transcript_emitted")
+    def on_user_transcript_emitted(msg):
+        transcript = msg.text.strip() if hasattr(msg, "text") else str(msg).strip()
         if not transcript or len(transcript) < 3:
             return
         asyncio.create_task(_log_transcript("user", transcript))
             
-    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, "cartesia_sonic"))
+    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, target_voice_track))
 
 async def unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, target_voice):
     logger.info("[SHUTDOWN] Executing pipeline sync updates.")

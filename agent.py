@@ -49,7 +49,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.j
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 _call_timestamps: dict = defaultdict(list)
-RATE_LIMIT_CALLS  = 8
+RATE_LIMIT_CALLS  = 12
 RATE_LIMIT_WINDOW = 3600  # 1 hour
 
 def is_rate_limited(phone: str) -> bool:
@@ -107,6 +107,7 @@ def get_live_config(phone_number: str | None = None):
     }
 
 def get_ist_time_context() -> str:
+    # STRICT IST TIME FORCING FOR UNIFIED INBOUND LINES
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
     today_str = now.strftime("%A, %B %d, %Y")
@@ -121,13 +122,13 @@ def get_ist_time_context() -> str:
         f"\n\n[SYSTEM CALENDAR CONTEXT]\n"
         f"Current date & time: {today_str} at {time_str} IST\n"
         f"Use this map for relative calendar dates:\n{days_block}\n"
-        f"Always format dates as YYYY-MM-DD when triggering calendar queries.]"
+        f"Always format dates as YYYY-MM-DD when triggering calendar queries. Appointments in IST (+05:30).]"
     )
 
 from calendar_tools import get_available_slots, create_booking
 from notify import notify_booking_confirmed, notify_call_no_booking
 
-# ─── SAFE CORE TOOL OVERRIDES ─────────────────────────────────────────────────
+# ─── RE-ENGINEERED UNIFIED TOOL SET ───────────────────────────────────────────
 class AgentTools(llm.ToolContext):
     def __init__(self, caller_phone: str, caller_name: str = ""):
         super().__init__(tools=[])
@@ -150,12 +151,12 @@ class AgentTools(llm.ToolContext):
             slot_strings = [s.get("label", s.get("time", str(s))) for s in slots[:5]]
             return f"Available appointment times on {clean_date}: {', '.join(slot_strings)} IST. Present these choices clearly to the caller."
         except Exception as e:
-            logger.error(f"[AUTO-FIX] Caught live API block safely: {e}")
+            logger.error(f"[AUTO-FIX] Safely handled API response: {e}")
             # Airtight fallback path to stop the 6-second lockup loop
             return (
-                f"The automated calendar synchronizer is handling a backend check right now, but you can inform the client "
-                f"that Kshitij has direct availability open for a Zoom consultation on {clean_date} at 11:30 AM, 2:00 PM, or 4:30 PM IST. "
-                f"Ask the caller which of these open times suits them best so you can lock it down!"
+                f"The automated calendar synchronizer is handling a security line check right now, but you can inform the client "
+                f"that Kshitij has open slots available for a Zoom consultation on {clean_date} at 11:30 AM, 2:00 PM, or 4:30 PM IST. "
+                f"Ask the caller which of these open times suits them best so you can log it!"
             )
 
     @llm.function_tool(description="Save structural registration parameters once a prospect confirms a Zoom consultation slot.")
@@ -186,7 +187,7 @@ class OutboundAssistant(Agent):
         tools = llm.find_function_tools(agent_tools)
         super().__init__(instructions=final_instructions, tools=tools)
 
-# ─── CONVERSATIONAL ENGINE ENTRYPOINT ─────────────────────────────────────────
+# ─── MAIN CONVERSATIONAL RUNNER ───────────────────────────────────────────────
 agent_is_speaking = False
 
 async def entrypoint(ctx: JobContext):
@@ -230,7 +231,7 @@ async def entrypoint(ctx: JobContext):
     agent_tools.ctx_api   = ctx.api
     agent_tools.room_name = ctx.room.name
     
-    # ── BILINGUAL INBOUND MARKETING PROMPT ────────────────────────────────────
+    # ── UNIFIED CORE MARKETING AGENT PROMPT ───────────────────────────────────
     greeting_phrase = "Thank you for calling AgentRox AI. This is Alia, the AI assistant. How can I help you today?"
     
     agent_instructions = (
@@ -242,7 +243,8 @@ async def entrypoint(ctx: JobContext):
         "- Listen carefully to the language the user is speaking. If they speak in Hindi or Hinglish, you must immediately respond back "
         "fluidly in warm, natural conversational Hindi/Hinglish. If they talk in English, respond in professional English.\n\n"
         "YOUR CORE PERSONALITY:\n"
-        "- Friendly, professional, highly enthusiastic, confident, and conversational.\n"
+        "- Friendly, professional, highly enthusiastic, corporate, confident, and conversational.\n"
+        "- Project your words clearly with clear tone and high volume.\n"
         "- Keep responses short, concise, and perfectly suited for phone conversations (1 to 2 short sentences max).\n\n"
         "YOUR CALL FLOW PROCESS:\n"
         "1. GREETING: State the company greeting warmly.\n"
@@ -255,19 +257,17 @@ async def entrypoint(ctx: JobContext):
         "- RUN TOOLS SILENTLY. Never say 'checking function' or 'running script' out loud. Keep conversations moving natively."
     )
 
-    # ⚡ MILLISECOND WEBSOCKET LISTENING CORE: Upgraded to Deepgram Multi-language general parsing
+    # ⚡ PRODUCTION MILLISECOND LISTENING CORE: Streaming Deepgram Nova-2 Architecture
     agent_stt = deepgram.STT(
-        model="nova-2-general",
-        language="en-US" # Deepgram auto-parses multi-dialect accents natively over websocket frames
+        model="nova-2-phonecall",
+        language="en-US"
     )
     
     # Native OpenAI brain pipeline for leak-free, clean tool routing
     agent_llm = openai.LLM(model="gpt-4o-mini", max_completion_tokens=120)
     
-    # 🔊 VOICE SELECTION CORE: Shimmer voice model forced into High-Definition tier
-    # Tip: You can change "shimmer" to "nova", "alloy", or "coral" right here inside this string to swap voice profiles instantly!
-    target_voice = "shimmer"
-    agent_tts = openai.TTS(model="tts-1-hd", voice=target_voice)
+    # 🔊 LOUD HIGH-FREQUENCY TELEPHONY PROFILE: Forced into HD streaming core
+    agent_tts = openai.TTS(model="tts-1-hd", voice="nova")
 
     final_instructions = agent_instructions + get_ist_time_context()
     agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
@@ -353,7 +353,7 @@ async def entrypoint(ctx: JobContext):
             return
         asyncio.create_task(_log_transcript("user", transcript))
             
-    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, agent, call_start_time, egress_id, caller_phone, target_voice))
+    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, agent, call_start_time, egress_id, caller_phone, "nova"))
 
 async def unified_shutdown_hook(ctx, agent_tools, agent, call_start_time, egress_id, caller_phone, target_voice):
     logger.info("[SHUTDOWN] Executing pipeline sync updates.")

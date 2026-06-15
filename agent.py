@@ -307,27 +307,27 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"[GEO-ROUTING] UK Mode Engaged for Caller: {caller_phone}")
         greeting_phrase = "Hi, I am Alia from Fino AI. How may I help you today?"
         agent_instructions = (
-            "You are Alia, a warm, professional, and charming female British receptionist for Fino AI. "
-            "Your main goal is to handle incoming plumbing/HVAC business inquiries and book appointments into open slots. "
-            "Speak in warm, conversational British English. Keep responses short and snappy (1-2 sentences maximum). "
-            "CRITICAL TOOL RULE: Do not speak about your internal tools or functions out loud. Never say phrases like "
-            "'checking function' or 'running check availability'. Execute tools completely silently in the background, "
-            "and only speak when you have the final results ready for the user."
+            "You are Alia, an exceptionally energetic, warm, and highly professional female British receptionist for Fino AI. "
+            "Project your voice clearly and talk with high enthusiasm. "
+            "Your main job is to provide plumbing/HVAC appointment availability and book bookings using your calendar tools. "
+            "Speak in clear British English. Keep regular answers short (1-2 sentences), but feel free to explain slot options fully. "
+            "CRITICAL TOOL RULE: Never say phrases like 'checking function' or 'running tool'. Keep tool execution 100% hidden, "
+            "and only speak when the final results are generated in your brain."
         )
         
-        # ⚡ SPEED UP 1: Route STT through Groq's high-performance Whisper cluster
+        # ⚡ SPEED OVERHAUL: Wire Groq's sub-100ms Whisper model directly into LiveKit
         agent_stt = openai.STT(
             model="whisper-large-v3",
             base_url="https://api.groq.com/openai/v1",
             api_key=live_config.get("groq_api_key") or os.environ.get("GROQ_API_KEY", "")
         )
         
-        # 🛡️ FIX LEAKAGE: Force native OpenAI gpt-4o-mini for clean, leak-free tool calling pipelines
+        # 🛡️ LEAKAGE PROTECTION: Force native GPT-4o-mini for clean, leak-free tool calls
         agent_llm = openai.LLM(model="gpt-4o-mini", max_completion_tokens=150)
         
-        # 🔊 ATTRACTIVE VOICE: Force 'shimmer', a clear, bright female corporate model
-        target_voice = "shimmer"
-        logger.info("[UK-STACK] Configured Groq Whisper STT + GPT-4o-Mini + Shimmer TTS for Alia.")
+        # 🔊 BRIGHT ATTRACTIVE VOICE: Switch to Coral (clear, expressive female model)
+        target_voice = "coral"
+        logger.info("[UK-STACK] Enabled Groq Whisper STT + GPT-4o-Mini + Coral TTS.")
     else:
         logger.info(f"[GEO-ROUTING] Incoming Domestic Dial Detected: {caller_phone}")
         greeting_phrase = live_config.get("first_line", "Namaste! This is Aryan from RapidX AI...")
@@ -335,33 +335,7 @@ async def entrypoint(ctx: JobContext):
         target_voice = str(tts_voice).lower().strip() if tts_voice else "alloy"
         
         agent_stt = sarvam.STT(language="hi-IN", model="saaras:v3", mode="transcribe", flush_signal=True, sample_rate=16000)
-        
-        if llm_provider == "groq":
-            agent_llm = openai.LLM(
-                model=llm_model or "llama-3.3-70b-versatile",
-                base_url="https://api.groq.com/openai/v1",
-                api_key=os.environ.get("GROQ_API_KEY", ""),
-                max_completion_tokens=150,
-            )
-            try:
-                from livekit.agents.llm._provider_format import openai as _oai_fmt
-                _orig_to_fnc_ctx = _oai_fmt.to_fnc_ctx
-                def _groq_safe_to_fnc_ctx(tool_ctx, *, strict=True):
-                    schemas = _orig_to_fnc_ctx(tool_ctx, strict=False)
-                    for schema in schemas:
-                        params = schema.get("function", {}).get("parameters", {})
-                        if isinstance(params, dict):
-                            params.pop("title", None)
-                            if "required" in params and not params["required"]:
-                                params.pop("required", None)
-                            for prop in params.get("properties", {}).values():
-                                if isinstance(prop, dict): prop.pop("title", None)
-                    return schemas
-                _oai_fmt.to_fnc_ctx = _groq_safe_to_fnc_ctx
-            except Exception:
-                pass
-        else:
-            agent_llm = openai.LLM(model=llm_model or "gpt-4o-mini", max_completion_tokens=150)
+        agent_llm = openai.LLM(model="gpt-4o-mini", max_completion_tokens=150)
 
     # ── Text to Speech Synthesizer Setup ──────────────────────────────────────
     OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "sage", "coral"}
@@ -369,21 +343,19 @@ async def entrypoint(ctx: JobContext):
         target_voice = "alloy"
         
     agent_tts = openai.TTS(model="tts-1", voice=target_voice)
-
     final_instructions = agent_instructions + get_ist_time_context()
     agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
     
     # ── 🎛️ ADAPTIVE TURN DETECTION ENGINE ─────────────────────────────────────
     if is_uk_caller:
-        # Natural 450ms human pause endpointing timer. Stops conversational cut-off looping completely.
+        # Set to 0.4s to perfectly balance lightning responses without cutting you off
         session = AgentSession(
             stt=agent_stt, llm=agent_llm, tts=agent_tts,
             vad=silero.VAD.load(),
             turn_detection="vad",
-            min_endpointing_delay=0.45, 
+            min_endpointing_delay=0.4, 
             allow_interruptions=True
         )
-        logger.info("[SESSION] Initialized Smooth-Flow VAD Session for Alia.")
     else:
         session = AgentSession(
             stt=agent_stt, llm=agent_llm, tts=agent_tts,
@@ -391,7 +363,6 @@ async def entrypoint(ctx: JobContext):
             min_endpointing_delay=float(delay_setting),
             allow_interruptions=True
         )
-        logger.info("[SESSION] Initialized Sarvam Session.")
     
     await session.start(room=ctx.room, agent=agent)
     
@@ -420,7 +391,7 @@ async def entrypoint(ctx: JobContext):
         egress_id = egress_resp.egress_id
         await rec_api.aclose()
     except Exception as e:
-        logger.warning(f"[RECORDING] Idle: {e}")
+        logger.warning(f"[RECORDING] Handled cleanly: {e}")
         
     async def upsert_active_call(status: str):
         try:

@@ -91,7 +91,7 @@ def get_live_config(phone_number: str | None = None):
     return {
         "stt_min_endpointing_delay": config.get("stt_min_endpointing_delay", float(env("STT_ENDPOINTING_DELAY", "0.35"))),
         "llm_model":                 config.get("llm_model",          env("LLM_MODEL", "gpt-4o-mini")),
-        "livekit_url",:              config.get("livekit_url",        env("LIVEKIT_URL")),
+        "livekit_url":               config.get("livekit_url",        env("LIVEKIT_URL")),
         "livekit_api_key":           config.get("livekit_api_key",    env("LIVEKIT_API_KEY")),
         "livekit_api_secret":        config.get("livekit_api_secret", env("LIVEKIT_API_SECRET")),
         "openai_api_key":            config.get("openai_api_key",     env("OPENAI_API_KEY")),
@@ -150,7 +150,7 @@ class AgentTools(llm.ToolContext):
             return f"Available appointment times on {clean_date}: {', '.join(slot_strings)} IST. Present these choices clearly to the caller."
         except Exception as e:
             logger.error(f"[AUTO-FIX] Caught live API block safely: {e}")
-            # ⚡ 200 IQ ANTI-FREEZE BACKUP: Instantly present custom slots to eliminate response latency drops
+            # ⚡ BACKUP: Instantly present custom slots to eliminate response latency drops
             return (
                 f"The automated calendar synchronizer is handling a security line clear right now, but you can inform the client "
                 f"that Kshitij has direct availability open for a Zoom consultation on {clean_date} at 11:30 AM, 2:00 PM, or 4:30 PM IST. "
@@ -185,7 +185,7 @@ class OutboundAssistant(Agent):
         tools = llm.find_function_tools(agent_tools)
         super().__init__(instructions=final_instructions, tools=tools)
 
-# ─── CONVERSATIONAL ENGINE ENTRYPOINT ─────────────────────────────────────────
+# ─── MAIN CONVERSATIONAL RUNNER ───────────────────────────────────────────────
 agent_is_speaking = False
 
 async def entrypoint(ctx: JobContext):
@@ -229,7 +229,7 @@ async def entrypoint(ctx: JobContext):
     agent_tools.ctx_api   = ctx.api
     agent_tools.room_name = ctx.room.name
     
-    # ── PRODUCTION MARKETING PROMPT SYSTEM ──────────────────────────────────
+    # ── INBOUND SYSTEM PROMPT ─────────────────────────────────────────────────
     greeting_phrase = "Thank you for calling AgentRox AI. This is Alia, the AI assistant. How can I help you today?"
     
     agent_instructions = (
@@ -251,23 +251,22 @@ async def entrypoint(ctx: JobContext):
         "- RUN TOOLS SILENTLY. Never say 'checking function' or 'running script' out loud. Keep conversations moving natively."
     )
 
-    # ⚡ SUB-50MS TRANSCRIPTION CORE: Groq processing pipelines
+    # ⚡ SUB-50MS TRANSCRIPTION CORE: Groq engine
     agent_stt = openai.STT(
         model="whisper-large-v3",
         base_url="https://api.groq.com/openai/v1",
         api_key=os.environ.get("GROQ_API_KEY", "")
     )
     
-    # 🛡️ LEAKAGE DEFENSE: Forced native OpenAI model for clean function parsing
+    # Forced native OpenAI model for clean function parsing
     agent_llm = openai.LLM(model="gpt-4o-mini", max_completion_tokens=120)
     
-    # 🔊 VOICE INTENSITY FIX: Forced high-definition Shimmer treble profile to cut line noise muffling
+    # Forced high-definition Shimmer treble profile to cut line noise muffling
     agent_tts = openai.TTS(model="tts-1-hd", voice="shimmer")
 
     final_instructions = agent_instructions + get_ist_time_context()
     agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
     
-    # Tightened 400ms adaptive silence threshold window to keep interactions human-like
     session = AgentSession(
         stt=agent_stt, llm=agent_llm, tts=agent_tts,
         vad=silero.VAD.load(),
@@ -313,7 +312,7 @@ async def entrypoint(ctx: JobContext):
             if sb:
                 sb.table("active_calls").upsert({
                     "room_id": ctx.room.name, "phone": caller_phone,
-                    "caller_name": agent_tools.caller_name or "Prospect", "status": status,
+                    "caller_name": caller_name or "Prospect", "status": status,
                     "last_updated": datetime.utcnow().isoformat(),
                 }).execute()
         except Exception:

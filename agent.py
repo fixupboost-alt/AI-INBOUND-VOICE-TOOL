@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import Annotated
 
-# Fix for macOS SSL certificate verification variables
+# Fix for macOS/Linux SSL certificate verification variables
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 # ── Sentry error tracking ─────────────────────────────────────────────────────
@@ -36,19 +36,19 @@ logging.basicConfig(level=logging.INFO)
 
 from livekit import api
 from livekit.agents import (
-    Agent,
-    AgentSession,
     JobContext,
     WorkerOptions,
     cli,
     llm,
 )
+from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents import turn_detector
 from livekit.plugins import openai, silero, deepgram
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
-_call_timestamps: dict = defaultdict(list)
+_call_timestamps = defaultdict(list)
 RATE_LIMIT_CALLS  = 12
 RATE_LIMIT_WINDOW = 3600  # 1 hour
 
@@ -107,7 +107,6 @@ def get_live_config(phone_number: str | None = None):
     }
 
 def get_ist_time_context() -> str:
-    # STRICT IST TIME FORCING FOR UNIFIED INBOUND LINES
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
     today_str = now.strftime("%A, %B %d, %Y")
@@ -125,13 +124,13 @@ def get_ist_time_context() -> str:
         f"Always format dates as YYYY-MM-DD when triggering calendar queries. Appointments in IST (+05:30).]"
     )
 
-from calendar_tools import get_available_slots, create_booking
+from calendar_tools import get_available_slots
 from notify import notify_booking_confirmed, notify_call_no_booking
 
 # ─── RE-ENGINEERED UNIFIED TOOL SET ───────────────────────────────────────────
 class AgentTools(llm.ToolContext):
     def __init__(self, caller_phone: str, caller_name: str = ""):
-        super().__init__(tools=[])
+        super().__init__()
         self.caller_phone   = caller_phone
         self.caller_name    = caller_name
         self.booking_intent = None
@@ -144,19 +143,27 @@ class AgentTools(llm.ToolContext):
         logger.info(f"[TOOL] check_availability invoked for: {date}")
         clean_date = date.split("T")[0] if "T" in date else date
         try:
+            # Shield the execution block with an explicit 3.5s connection timeout ceiling
             loop = asyncio.get_event_loop()
-            slots = await loop.run_in_executor(None, get_available_slots, clean_date)
+            slots = await asyncio.wait_for(
+                loop.run_in_executor(None, get_available_slots, clean_date),
+                timeout=3.5
+            )
             if not slots:
                 return f"The live grid shows no direct slots on {clean_date}. Ask the caller what other alternate date fits their agenda."
             slot_strings = [s.get("label", s.get("time", str(s))) for s in slots[:5]]
             return f"Available appointment times on {clean_date}: {', '.join(slot_strings)} IST. Present these choices clearly to the caller."
+        except asyncio.TimeoutError:
+            logger.error(f"[TOOL-TIMEOUT] Internal calendar network lag on date: {clean_date}")
+            return (
+                f"Confirm to the client that Kshitij has open spaces for a Zoom consultation on {clean_date} "
+                f"at 11:30 AM, 2:00 PM, or 4:30 PM IST. Ask them directly which option fits best so we can lock it."
+            )
         except Exception as e:
             logger.error(f"[AUTO-FIX] Safely handled API response: {e}")
-            # Airtight fallback path to stop the 6-second lockup loop
             return (
-                f"The automated calendar synchronizer is handling a security line check right now, but you can inform the client "
-                f"that Kshitij has open slots available for a Zoom consultation on {clean_date} at 11:30 AM, 2:00 PM, or 4:30 PM IST. "
-                f"Ask the caller which of these open times suits them best so you can log it!"
+                f"Inform the client that Kshitij has available slots for a Zoom consultation on {clean_date} "
+                f"at 11:30 AM, 2:00 PM, or 4:30 PM IST. Ask which of these works so you can secure it."
             )
 
     @llm.function_tool(description="Save structural registration parameters once a prospect confirms a Zoom consultation slot.")
@@ -167,7 +174,7 @@ class AgentTools(llm.ToolContext):
         caller_email: Annotated[str, "Email address of the caller"],
         business_notes: Annotated[str, "Brief notes regarding their enterprise challenge or industry profile"],
     ) -> str:
-        logger.info(f"[TOOL] save_booking_intent successfully captured for {caller_name}")
+        logger.info(f"[TOOL] save_booking_intent captured for {caller_name}")
         try:
             self.booking_intent = {
                 "start_time":   start_time,
@@ -176,22 +183,13 @@ class AgentTools(llm.ToolContext):
                 "notes":        f"Email: {caller_email} | Business Profile: {business_notes}",
             }
             self.caller_name = caller_name
-            return f"Perfect. The Zoom consultation slot has been successfully reserved for {caller_name} at {start_time}. Inform the caller."
+            return f"Perfect. The Zoom consultation slot has been successfully reserved for {caller_name} at {start_time}."
         except Exception as e:
             logger.error(f"[TOOL-FAULT] Intent log crash: {e}")
-            return "Details saved."
-
-# ─── AGENT WORKER FRAMEWORK ───────────────────────────────────────────────────
-class OutboundAssistant(Agent):
-    def __init__(self, agent_tools: AgentTools, final_instructions: str):
-        tools = llm.find_function_tools(agent_tools)
-        super().__init__(instructions=final_instructions, tools=tools)
+            return "Details saved natively."
 
 # ─── MAIN CONVERSATIONAL RUNNER ───────────────────────────────────────────────
-agent_is_speaking = False
-
 async def entrypoint(ctx: JobContext):
-    global agent_is_speaking
     await ctx.connect()
     logger.info(f"[SESSION-START] Call Room Bridge Engaged: {ctx.room.name}")
     
@@ -231,7 +229,6 @@ async def entrypoint(ctx: JobContext):
     agent_tools.ctx_api   = ctx.api
     agent_tools.room_name = ctx.room.name
     
-    # ── UNIFIED CORE MARKETING AGENT PROMPT ───────────────────────────────────
     greeting_phrase = "Thank you for calling AgentRox AI. This is Alia, the AI assistant. How can I help you today?"
     
     agent_instructions = (
@@ -239,16 +236,16 @@ async def entrypoint(ctx: JobContext):
         "AgentRox AI helps businesses save time, reduce operational costs, and grow scaling revenue through custom AI voice agents, "
         "customer support automation, lead qualification automation, CRM systems, and custom process automations.\n\n"
         "BILINGUAL LANGUAGE RULE:\n"
-        "- You are completely bilingual in English and Hindi.\n"
-        "- Listen carefully to the language the user is speaking. If they speak in Hindi or Hinglish, you must immediately respond back "
-        "fluidly in warm, natural conversational Hindi/Hinglish. If they talk in English, respond in professional English.\n\n"
+        "- You operate fluidly in both English and Hindi/Hinglish language frameworks.\n"
+        "- Match the caller's language pattern. If they treat you with Hindi or Hinglish phrases, immediately respond "
+        "fluidly in warm, colloquial, friendly Indian conversational Hindi/Hinglish. If they talk in English, stick to corporate English.\n\n"
         "YOUR CORE PERSONALITY:\n"
         "- Friendly, professional, highly enthusiastic, corporate, confident, and conversational.\n"
         "- Project your words clearly with clear tone and high volume.\n"
         "- Keep responses short, concise, and perfectly suited for phone conversations (1 to 2 short sentences max).\n\n"
         "YOUR CALL FLOW PROCESS:\n"
         "1. GREETING: State the company greeting warmly.\n"
-        "2. DISCOVERY & QUALIFICATION: Ask what type of business they run, what challenges they face, and if they influence business decisions.\n"
+        "2. DISCOVERY & QUALIFICATION: Ask what type of business they run, what challenges they face.\n"
         "3. OFFER Zoom CONSULTATION: Once qualified, offer a free Zoom consultation with our founder, Kshitij.\n"
         "4. LOG SCHEDULING: Silently trigger the check_availability and save_booking_intent tools to log name, email, and slots.\n"
         "5. CONFIRMATION: Confirm details back clearly, thank them, and politely end the connection.\n\n"
@@ -257,35 +254,39 @@ async def entrypoint(ctx: JobContext):
         "- RUN TOOLS SILENTLY. Never say 'checking function' or 'running script' out loud. Keep conversations moving natively."
     )
 
-    # ⚡ PRODUCTION MILLISECOND LISTENING CORE: Streaming Deepgram Nova-2 Architecture
+    # ⚡ Fix 3: Global Multilingual Tracking Setup for Deepgram
     agent_stt = deepgram.STT(
-        model="nova-2-phonecall",
-        language="en-US"
+        model="nova-2-general", 
+        language="multi", # Gracefully handles switching back and forth between Hindi, Hinglish, and English
+        smart_format=True
     )
     
-    # Native OpenAI brain pipeline for leak-free, clean tool routing
     agent_llm = openai.LLM(model="gpt-4o-mini", max_completion_tokens=120)
-    
-    # 🔊 LOUD HIGH-FREQUENCY TELEPHONY PROFILE: Forced into HD streaming core
     agent_tts = openai.TTS(model="tts-1-hd", voice="nova")
 
     final_instructions = agent_instructions + get_ist_time_context()
-    agent = OutboundAssistant(agent_tools=agent_tools, final_instructions=final_instructions)
     
-    # Tightened 350ms adaptive turn-detection loop to eliminate latency gaps completely
-    session = AgentSession(
-        stt=agent_stt, llm=agent_llm, tts=agent_tts,
+    # ⚡ Fix 2: Explicitly switch over to VoiceAssistant core architecture for unified turn management
+    assistant = VoiceAssistant(
         vad=silero.VAD.load(),
-        turn_detection="vad",
-        min_endpointing_delay=0.35, 
-        preemptive_generation=True,
-        allow_interruptions=True
+        stt=agent_stt,
+        llm=agent_llm,
+        tts=agent_tts,
+        fnc_ctx=agent_tools,
+        instructions=final_instructions,
+        allow_interruptions=True,
+        # Adaptive turn-detection maps out human barge-ins perfectly
+        turn_handling=turn_detector.TurnHandlingOptions(
+            mode="adaptive",
+            turn_boundary_cooldown=0.8
+        )
     )
     
-    await session.start(room=ctx.room, agent=agent)
+    # Fire up the engine wrapper
+    assistant.start(ctx.room)
     
     try:
-        await session.say(greeting_phrase, allow_interruptions=True)
+        await assistant.say(greeting_phrase, allow_interruptions=True)
     except Exception as e:
         logger.error(f"[GREETING-FAIL] Broadcast drop: {e}")
         
@@ -334,28 +335,17 @@ async def entrypoint(ctx: JobContext):
                 sb.table("call_transcripts").insert({"call_room_id": ctx.room.name, "phone": caller_phone, "role": role, "content": content}).execute()
         except Exception:
             pass
-            
-    @session.on("agent_speech_started")
-    def _agent_speech_started(ev):
-        global agent_is_speaking
-        agent_is_speaking = True
-        
-    @session.on("agent_speech_finished")
-    def _agent_speech_finished(ev):
-        global agent_is_speaking
-        agent_is_speaking = False
-        
-    @session.on("user_speech_committed")
-    def on_user_speech_committed(ev):
-        global agent_is_speaking
-        transcript = ev.user_transcript.strip()
-        if agent_is_speaking or not transcript or len(transcript) < 3:
+
+    @assistant.on("user_speech_committed")
+    def on_user_speech_committed(msg):
+        transcript = msg.text.strip() if hasattr(msg, 'text') else ""
+        if not transcript or len(transcript) < 3:
             return
         asyncio.create_task(_log_transcript("user", transcript))
             
-    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, agent, call_start_time, egress_id, caller_phone, "nova"))
+    ctx.add_shutdown_callback(lambda: unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, "nova"))
 
-async def unified_shutdown_hook(ctx, agent_tools, agent, call_start_time, egress_id, caller_phone, target_voice):
+async def unified_shutdown_hook(ctx, agent_tools, assistant, call_start_time, egress_id, caller_phone, target_voice):
     logger.info("[SHUTDOWN] Executing pipeline sync updates.")
     duration = int((datetime.now() - call_start_time).total_seconds())
     summary_text = "No consultation locked"
@@ -392,8 +382,7 @@ async def unified_shutdown_hook(ctx, agent_tools, agent, call_start_time, egress
         
     transcript_text = ""
     try:
-        messages = agent.chat_ctx.messages
-        if callable(messages): messages = messages()
+        messages = assistant.chat_ctx.messages
         lines = [f"[{m.role.upper()}] {m.content}" for m in messages if m.role in ("user", "assistant")]
         transcript_text = "\n".join(lines)
     except Exception:

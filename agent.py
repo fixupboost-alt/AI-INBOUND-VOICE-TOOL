@@ -42,7 +42,7 @@ from livekit.agents import (
     llm,
 )
 # 🎯 v1.4.2 STABLE IMPORT LOCATION
-from livekit.agents.voice_assistant import VoiceAssistant
+from livekit.agents.pipeline import VoiceAssistant, turn_detector
 from livekit.plugins import openai, silero, deepgram, cartesia
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")

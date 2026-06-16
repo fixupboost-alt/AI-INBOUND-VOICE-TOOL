@@ -3,6 +3,7 @@ import logging
 from dotenv import load_dotenv
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
 from livekit.agents.voice import Agent, AgentSession
+from livekit.agents.voice.room_io import RoomOptions
 from livekit.plugins import deepgram, openai, silero
 
 load_dotenv()
@@ -11,9 +12,9 @@ logger = logging.getLogger("voice-agent")
 def prewarm(proc):
     # Pre-loads Voice Activity Detection into server memory for faster response times
     proc.userdata["vad"] = silero.VAD.load(
-        min_speech_duration=0.05,       # Detect speech faster (lower CPU threshold)
-        min_silence_duration=0.1,       # React to silence quickly
-        activation_threshold=0.5,       # Standard sensitivity
+        min_speech_duration=0.05,   # Detect speech faster on CPU servers
+        min_silence_duration=0.1,
+        activation_threshold=0.5,
     )
 
 async def entrypoint(ctx: JobContext):
@@ -45,17 +46,20 @@ async def entrypoint(ctx: JobContext):
         max_endpointing_delay=1.5,
     )
 
-    # Start the session — pass participant directly (avoids deprecated RoomInputOptions)
+    # Start the session using RoomOptions with participant_identity (correct v1.4.x API)
     await session.start(
-        room=ctx.room,
         agent=agent,
-        participant=participant,
+        room=ctx.room,
+        room_options=RoomOptions(
+            participant_identity=participant.identity,
+            close_on_disconnect=True,
+        ),
     )
 
-    # Small buffer to ensure audio pipeline is fully ready before speaking
+    # Small buffer to ensure audio pipeline is ready before speaking
     await asyncio.sleep(0.5)
 
-    # Greet the caller
+    # Greet the caller as soon as the call connects
     await session.say(
         "Hello, thank you for calling! How can I help you today?",
         allow_interruptions=True,

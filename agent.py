@@ -1,7 +1,9 @@
 """
 AgentroxAI — Inbound Voice Agent
-All settings are baked in as defaults. config.json overrides when present (local/dashboard use).
-On Coolify: reads from environment variables + hardcoded defaults below.
+- Hardcoded defaults so Coolify works without config.json
+- Hinglish enforced in system prompt addon
+- Cal.com booking via requests.post (thread-safe, no httpx issues)
+- Speed: slightly slower (pace=0.85 Sarvam, speed=slow Cartesia)
 """
 
 import asyncio
@@ -21,85 +23,81 @@ load_dotenv()
 logger = logging.getLogger("voice-agent")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HARDCODED DEFAULTS — these run on Coolify where config.json doesn't exist.
-# Change them here OR override via config.json (dashboard) OR env vars.
+# HARDCODED DEFAULTS — work on Coolify even when config.json doesn't exist
 # ─────────────────────────────────────────────────────────────────────────────
 
-DEFAULT_SYSTEM_PROMPT = """You are an AI Sales Representative for AgentroxAI, an AI Automation Agency that helps businesses save time, reduce costs, and increase revenue through AI Agents and Business Automation.
+CAL_API_KEY    = "cal_live_1d442a89cf031055925cfe4defbdc532"
+CAL_EVENT_ID   = 5804552
 
-Your role is to professionally answer inbound calls, understand the caller's needs, explain our services, qualify the lead, and encourage them to book a Zoom consultation with our founder, Kshitij.
+DEFAULT_SYSTEM_PROMPT = """\
+You are Priya, an AI Sales Representative for AgentroxAI — an AI Automation Agency \
+that helps businesses save time, reduce costs, and increase revenue through AI Agents \
+and Business Automation.
 
-## Personality
-- Friendly and professional
-- Confident but not pushy
-- Conversational and natural
-- Focused on understanding the prospect's business challenges
-- Keep responses short and suitable for voice conversations
+Your role: Answer inbound calls professionally, understand needs, explain services, \
+qualify the lead, and book a FREE Zoom consultation with our founder Kshitij.
 
-## Company Information
-Company Name: AgentroxAI
-
-Services:
-- AI Voice Agents (like this one!)
-- AI Chat Agents
+## About AgentroxAI
+Services we offer:
+- AI Voice Agents (like yourself!)
+- AI Chat Agents for websites
 - Customer Support Automation
 - Lead Qualification Automation
 - Appointment Booking Systems
-- CRM Automation
-- Business Process Automation
+- CRM Automation & Business Process Automation
 - Custom AI Solutions
 
-Target Customers:
-- Local Businesses, Agencies, Service Businesses, Healthcare Clinics
-- Real Estate Companies, Educational Institutions, E-commerce Businesses
+Our clients: Local Businesses, Agencies, Healthcare Clinics, Real Estate, Education, E-commerce.
+Value: We automate repetitive tasks so businesses can grow faster with less effort.
 
-Value Proposition: We help businesses automate repetitive tasks, improve customer response times, generate more leads, reduce operational costs, and scale efficiently using AI.
+## Your Goal
+Book a FREE Zoom consultation with Kshitij. Do NOT sell on the call.
 
-## Primary Objective
-Book a FREE Zoom consultation between the prospect and Kshitij. Do NOT close a sale on this call.
-
-## Call Flow
-Step 1 — Discovery: Ask what business they run, how many employees, what challenge they face, what tools they use.
-Step 2 — Qualify: Check if they own/influence decisions and have genuine AI/automation needs.
-Step 3 — Offer: "Based on what you shared, I think Kshitij can definitely help. Want to book a free Zoom call with him?"
-Step 4 — Book: When they say yes, IMMEDIATELY call get_next_available_slot, tell them the time, confirm it.
-Step 5 — Collect: Ask for full name, then email address. Confirm: "Just to confirm — your name is [name] and email is [email]. Correct?"
-Step 6 — Confirm: Call book_consultation with all details. Then say: "Done! Kshitij will send the Zoom link to your email shortly."
-
-## Objection Handling
-- "Too expensive" → "Most clients recover the cost in month one from saved labor. Kshitij can show exact numbers — want a quick call?"
-- "Not sure it works" → "That's exactly why we do a free demo — no commitment at all."
-- "Already have someone" → "We work alongside your existing team — we just handle the repetitive stuff."
+## Call Steps
+1. Discover: Ask what business they run, how many employees, what problem they face.
+2. Qualify: Confirm they make decisions and genuinely need automation.
+3. Offer: "Based on what you shared, I think Kshitij can really help. Want to book a free Zoom call?"
+4. When they say YES — IMMEDIATELY call get_next_available_slot. Do not wait.
+5. Tell them the slot. Once they confirm, ask for their full name.
+6. Then ask for their email.
+7. Confirm: "Just to confirm — [name] at [email]. Is that right?"
+8. Call book_consultation. Then say: "Done! Kshitij will send the Zoom link to your email shortly."
 
 ## Rules
-- NEVER pressure the caller
-- NEVER promise specific results  
-- Max 2 sentences per response — this is a phone call
-- Always guide qualified leads toward the Zoom consultation
-- If caller declines, politely thank them and end the call
-- When booking, ALWAYS call get_next_available_slot first, then book_consultation — NEVER pretend to book"""
+- Max 2 sentences per reply — this is a phone call
+- Never pressure, never promise results, never discuss pricing
+- If caller declines, thank them warmly and end the call
+- NEVER say you booked without actually calling book_consultation\
+"""
 
-DEFAULT_FIRST_LINE = "Namaste! AgentroxAI mein aapka swagat hai. Aap kaise hain, aur main aapki kaise madad kar sakta hoon?"
+HINGLISH_ADDON = """
 
-DEFAULT_HINGLISH_ADDON = """
+## LANGUAGE RULE — NON-NEGOTIABLE
+You MUST speak in Hinglish — the way educated urban Indians actually talk on the phone.
+Mix Hindi and English naturally in every single response.
 
-## LANGUAGE — MANDATORY RULE
-You MUST reply in Hinglish — natural mix of Hindi and English, exactly how urban Indians speak.
+CORRECT examples:
+- "Haan bilkul, main samajh sakta hoon. Aapka business kya hai?"
+- "Acha! Toh aap AI automation mein interested hain? Kshitij ke saath ek free Zoom call book karte hain."
+- "Theek hai, main abhi ek available slot check karta hoon."
+- "Bahut badiya! Aapka naam aur email bata dein please."
+- "Done! Kshitij aapko Zoom link email kar denge shortly."
 
-Examples of correct Hinglish responses:
-- "Haan bilkul! Aapka business kya hai? Hum AI se aapki kaafi madad kar sakte hain."
-- "Acha, toh aap ek free Zoom call book karna chahenge Kshitij ke saath? Woh personally baat karenge."
-- "Theek hai! Main abhi ek slot check karta hoon aapke liye."
-- "Bahut badiya! Aapka naam aur email bata dein, main booking confirm kar deta hoon."
+Hindi words to use naturally: haan, nahi, acha, bilkul, theek hai, toh, kya, \
+bataiye, zaroor, suniye, bahut, badiya, abhi, main, aapka, aapki, madad, samjha, \
+boliye, shukriya, bas, ek second
 
-Key Hindi words to use naturally: haan, nahi, acha, bilkul, theek hai, toh, kya, bataiye, zaroor, suniye, bahut, badiya, samjha, abhi, aapka, aapki, main, madad, kar, sakte
+RULES:
+- If caller speaks English → use light Hinglish (mostly English + Hindi sprinkles)
+- If caller speaks Hindi → use heavy Hinglish (mostly Hindi + English terms)
+- NEVER reply in pure English — always include Hindi words
+- NEVER reply in pure Hindi — keep technical terms in English\
+"""
 
-Rules:
-- If caller speaks English → reply in light Hinglish (more English, some Hindi)
-- If caller speaks Hindi → reply in heavy Hinglish (more Hindi, some English)
-- NEVER reply in pure English — always mix some Hindi words
-- Max 2 sentences per reply"""
-
+DEFAULT_FIRST_LINE = (
+    "Namaste! Thank you for calling AgentroxAI. "
+    "Main aapki kaise help kar sakta hoon aaj?"
+)
 
 # ── Config loader ─────────────────────────────────────────────────────────────
 _CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -108,13 +106,13 @@ def _load_config() -> dict:
     try:
         with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
             cfg = json.load(f)
-            logger.info("[CONFIG] Loaded config.json")
+            logger.info("[CONFIG] Loaded config.json from disk")
             return cfg
     except FileNotFoundError:
-        logger.info("[CONFIG] config.json not found — using hardcoded defaults (Coolify mode)")
+        logger.info("[CONFIG] No config.json — using hardcoded defaults")
         return {}
     except Exception as e:
-        logger.warning(f"[CONFIG] Error loading config.json: {e} — using defaults")
+        logger.warning(f"[CONFIG] Error: {e} — using hardcoded defaults")
         return {}
 
 
@@ -123,109 +121,118 @@ def _load_config() -> dict:
 @llm.function_tool(
     name="get_next_available_slot",
     description=(
-        "Get the next available appointment slot for a Zoom consultation. "
-        "Call this IMMEDIATELY when the caller agrees to book a meeting — do NOT wait. "
+        "Find the next available Zoom consultation slot. "
+        "Call this IMMEDIATELY when the caller agrees to book — do NOT ask for name/email first. "
         "Returns the next open date and time."
     ),
 )
 async def get_next_available_slot() -> str:
-    """Find the earliest available appointment slot from today onwards."""
-    # Use env vars directly (works on Coolify where config.json doesn't exist)
-    cal_api_key = os.environ.get("CAL_API_KEY", "cal_live_1d442a89cf031055925cfe4defbdc532")
-    cal_event_id = os.environ.get("CAL_EVENT_TYPE_ID", "5804552")
+    """Find the earliest open slot in Cal.com starting from today."""
+    import requests
 
-    import requests as req
-    try:
+    api_key  = os.environ.get("CAL_API_KEY", CAL_API_KEY)
+    event_id = os.environ.get("CAL_EVENT_TYPE_ID", str(CAL_EVENT_ID))
+
+    def _fetch_slots():
         today = date_type.today()
-        for days_ahead in range(8):
-            check_date = (today + timedelta(days=days_ahead)).isoformat()
-            start_dt = f"{check_date}T00:00:00Z"
-            end_dt   = f"{check_date}T23:59:59Z"
+        for days in range(8):
+            check = (today + timedelta(days=days)).isoformat()
+            try:
+                r = requests.get(
+                    "https://api.cal.com/v2/slots",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "cal-api-version": "2024-09-04",
+                    },
+                    params={
+                        "eventTypeId": event_id,
+                        "start": f"{check}T00:00:00Z",
+                        "end":   f"{check}T23:59:59Z",
+                    },
+                    timeout=8,
+                )
+                if r.status_code != 200:
+                    continue
+                data = r.json().get("data", {})
+                slots = []
+                if isinstance(data, dict):
+                    slots = data.get(check, [])
+                    if not slots:
+                        for v in data.values():
+                            if isinstance(v, list) and v:
+                                slots = v
+                                break
+                if slots:
+                    s = slots[0]
+                    t = s.get("start") or s.get("time", "")
+                    if t:
+                        dt_utc = datetime.fromisoformat(t.replace("Z", "+00:00"))
+                        ist = timezone(timedelta(hours=5, minutes=30))
+                        dt_ist = dt_utc.astimezone(ist)
+                        return {
+                            "date":    check,
+                            "time24":  dt_ist.strftime("%H:%M"),
+                            "label":   dt_ist.strftime("%I:%M %p").lstrip("0"),
+                            "weekday": dt_ist.strftime("%A"),
+                        }
+            except Exception as ex:
+                logger.warning(f"[CAL] Slot check error for {check}: {ex}")
+        return None
 
-            resp = req.get(
-                "https://api.cal.com/v2/slots",
-                headers={
-                    "Authorization": f"Bearer {cal_api_key}",
-                    "cal-api-version": "2024-09-04",
-                },
-                params={"eventTypeId": cal_event_id, "start": start_dt, "end": end_dt},
-                timeout=8,
+    try:
+        slot = await asyncio.to_thread(_fetch_slots)
+        if slot:
+            logger.info(f"[CAL] Next slot: {slot['date']} {slot['time24']} IST")
+            return (
+                f"SLOT FOUND: date={slot['date']}, time={slot['time24']}, "
+                f"label={slot['label']} IST, day={slot['weekday']}. "
+                f"Tell caller: 'Next available slot is {slot['weekday']} {slot['date']} "
+                f"at {slot['label']} IST. Does that work?' "
+                f"Once confirmed, collect name and email, then call book_consultation."
             )
-
-            if resp.status_code != 200:
-                logger.warning(f"[CAL] Slots API {resp.status_code} for {check_date}")
-                continue
-
-            data = resp.json().get("data", {})
-            raw_slots = []
-            if isinstance(data, dict):
-                raw_slots = data.get(check_date, [])
-                if not raw_slots:
-                    for v in data.values():
-                        if isinstance(v, list) and v:
-                            raw_slots = v
-                            break
-
-            if raw_slots:
-                first = raw_slots[0]
-                slot_utc = first.get("start") or first.get("time", "")
-                if slot_utc:
-                    clean = slot_utc.replace("Z", "+00:00")
-                    dt_utc = datetime.fromisoformat(clean)
-                    ist = timezone(timedelta(hours=5, minutes=30))
-                    dt_ist = dt_utc.astimezone(ist)
-                    time_label = dt_ist.strftime("%I:%M %p").lstrip("0")
-                    time_24h   = dt_ist.strftime("%H:%M")
-
-                    logger.info(f"[CAL] Next slot: {check_date} at {time_24h} IST")
-                    return (
-                        f"slot_date={check_date} slot_time={time_24h} label={time_label} IST. "
-                        f"Tell the caller: The next available slot is {check_date} ({dt_ist.strftime('%A')}) at {time_label} IST. "
-                        f"Ask if this time works. Once confirmed, call book_consultation."
-                    )
-
         return (
             "No slots found in next 7 days. "
-            "Tell the caller: Kshitij will personally reach out to schedule the Zoom call."
+            "Tell caller: Kshitij will personally reach out to schedule the meeting."
         )
     except Exception as e:
         logger.error(f"[CAL] get_next_available_slot error: {e}")
-        return "Calendar check failed. Tell the caller Kshitij will reach out to schedule personally."
+        return "Calendar unavailable. Tell caller Kshitij will reach out to schedule."
 
 
 @llm.function_tool(
     name="book_consultation",
     description=(
         "Book the Zoom consultation in Cal.com. "
-        "Call this after: (1) caller confirmed the time slot, (2) you have their name AND email. "
-        "This actually creates the real booking — never say 'booked' without calling this first."
+        "Call this ONLY after: (1) caller confirmed the time slot, "
+        "(2) you have their name AND email. "
+        "This creates the REAL booking — never say 'booked' without calling this."
     ),
 )
 async def book_consultation(
     caller_name:  Annotated[str, "Caller's full name"],
     caller_email: Annotated[str, "Caller's email address"],
-    date:         Annotated[str, "Appointment date YYYY-MM-DD"],
-    time_slot:    Annotated[str, "Appointment time HH:MM in 24-hour format e.g. '10:00'"],
-    notes:        Annotated[str, "Brief notes about what the caller needs"] = "",
+    date:         Annotated[str, "Date in YYYY-MM-DD format"],
+    time_slot:    Annotated[str, "Time in HH:MM 24h format e.g. '10:00'"],
+    notes:        Annotated[str, "Brief notes about caller's needs"] = "",
 ) -> str:
-    """Create the actual Cal.com booking."""
-    # Direct env var access — works on Coolify
-    cal_api_key  = os.environ.get("CAL_API_KEY", "cal_live_1d442a89cf031055925cfe4defbdc532")
-    cal_event_id = int(os.environ.get("CAL_EVENT_TYPE_ID", "5804552"))
+    """Create the real Cal.com booking via requests (thread-safe)."""
+    import requests
+
+    api_key  = os.environ.get("CAL_API_KEY", CAL_API_KEY)
+    event_id = int(os.environ.get("CAL_EVENT_TYPE_ID", str(CAL_EVENT_ID)))
     caller_phone = os.environ.get("_CALLER_PHONE_", "unknown")
 
-    # Build ISO 8601 in IST
+    # Build IST ISO timestamp
     try:
-        ist_offset = timedelta(hours=5, minutes=30)
-        dt_naive   = datetime.strptime(f"{date} {time_slot}", "%Y-%m-%d %H:%M")
-        dt_ist     = dt_naive.replace(tzinfo=timezone(ist_offset))
-        start_iso  = dt_ist.isoformat()
+        ist = timezone(timedelta(hours=5, minutes=30))
+        dt  = datetime.strptime(f"{date} {time_slot}", "%Y-%m-%d %H:%M").replace(tzinfo=ist)
+        start_iso = dt.isoformat()
     except Exception as e:
         logger.error(f"[CAL] datetime parse error: {e}")
-        return "Couldn't parse date/time. Please confirm the appointment date and time again."
+        return "Couldn't parse that date/time. Please confirm the date and time again."
 
     payload = {
-        "eventTypeId": cal_event_id,
+        "eventTypeId": event_id,
         "start": start_iso,
         "attendee": {
             "name":        caller_name,
@@ -235,26 +242,29 @@ async def book_consultation(
             "language":    "en",
         },
         "bookingFieldsResponses": {
-            "notes": notes or f"Zoom consultation. Phone: {caller_phone}",
+            "notes": notes or f"Booked via AI agent. Email: {caller_email}",
         },
     }
 
-    import httpx
+    def _do_book():
+        return requests.post(
+            "https://api.cal.com/v2/bookings",
+            headers={
+                "Authorization":   f"Bearer {api_key}",
+                "cal-api-version": "2024-08-13",
+                "Content-Type":    "application/json",
+            },
+            json=payload,
+            timeout=10,
+        )
+
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                "https://api.cal.com/v2/bookings",
-                headers={
-                    "Authorization":   f"Bearer {cal_api_key}",
-                    "cal-api-version": "2024-08-13",
-                    "Content-Type":    "application/json",
-                },
-                json=payload,
-            )
+        resp = await asyncio.to_thread(_do_book)
+        logger.info(f"[CAL] POST /v2/bookings → {resp.status_code}: {resp.text[:200]}")
 
         if resp.status_code in (200, 201):
             uid = resp.json().get("data", {}).get("uid", "N/A")
-            logger.info(f"[CAL] Booked! uid={uid} name={caller_name} email={caller_email} time={start_iso}")
+            logger.info(f"[CAL] Booking created! uid={uid} for {caller_name} <{caller_email}>")
 
             # Telegram notification (best-effort)
             try:
@@ -267,26 +277,27 @@ async def book_consultation(
                     notes=f"Email: {caller_email}. {notes}",
                 )
             except Exception as ne:
-                logger.warning(f"[NOTIFY] Telegram failed: {ne}")
+                logger.warning(f"[NOTIFY] Telegram: {ne}")
 
             return (
                 f"Booking confirmed! {caller_name}'s Zoom consultation is booked for "
-                f"{date} at {time_slot} IST. Booking ID: {uid}. "
-                f"Kshitij will send the Zoom link to {caller_email} shortly."
+                f"{date} at {time_slot} IST. Kshitij will send the Zoom link to {caller_email} shortly."
             )
         else:
-            logger.error(f"[CAL] Booking failed {resp.status_code}: {resp.text[:300]}")
-            return f"Booking failed (error {resp.status_code}). Tell the caller Kshitij will reach out personally to schedule."
-
+            err = resp.json().get("error", {}).get("message", resp.text[:100])
+            logger.error(f"[CAL] Booking failed {resp.status_code}: {err}")
+            return (
+                f"Booking issue: {err}. "
+                "Tell caller: Kshitij will personally reach out to confirm the meeting."
+            )
     except Exception as e:
         logger.error(f"[CAL] book_consultation error: {e}")
-        return "Technical issue with booking. Tell the caller Kshitij will personally reach out to schedule the call."
+        return "Technical issue. Tell caller Kshitij will personally reach out to schedule."
 
 
 # ── Prewarm ───────────────────────────────────────────────────────────────────
 
 def prewarm(proc):
-    """Pre-loads VAD so the first call has no cold-start delay."""
     proc.userdata["vad"] = silero.VAD.load(
         min_speech_duration=0.05,
         min_silence_duration=0.1,
@@ -303,33 +314,30 @@ async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
     participant = await ctx.wait_for_participant()
     caller_phone = participant.identity or "unknown"
+    os.environ["_CALLER_PHONE_"] = caller_phone
     logger.info(f"[AGENT] Caller: {caller_phone}")
 
-    # Store phone for booking tool
-    os.environ["_CALLER_PHONE_"] = caller_phone
-
-    # ── Build system prompt ────────────────────────────────────────────────────
-    # Priority: config.json (dashboard) → hardcoded default → env var
+    # ── System prompt: config.json → env var → hardcoded default ──────────────
     base_prompt = (
         config.get("agent_instructions")
         or os.environ.get("AGENT_INSTRUCTIONS")
         or DEFAULT_SYSTEM_PROMPT
     ).strip()
 
-    # Always append Hinglish instruction (forces LLM to write Hinglish text)
-    agent_instructions = base_prompt + DEFAULT_HINGLISH_ADDON
-    logger.info(f"[AGENT] System prompt: {len(agent_instructions)} chars")
+    # Always append Hinglish rules — this is what makes the LLM write Hinglish
+    agent_instructions = base_prompt + HINGLISH_ADDON
+    logger.info(f"[AGENT] Prompt: {len(agent_instructions)} chars")
 
     # ── Settings ───────────────────────────────────────────────────────────────
-    first_line     = config.get("first_line") or os.environ.get("AGENT_FIRST_LINE") or DEFAULT_FIRST_LINE
+    first_line     = config.get("first_line") or DEFAULT_FIRST_LINE
     llm_provider   = config.get("llm_provider") or os.environ.get("LLM_PROVIDER", "groq")
     llm_model      = config.get("llm_model") or os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile")
-    tts_voice_name = config.get("tts_voice") or os.environ.get("TTS_VOICE", "kavya")
-    lang_preset    = config.get("lang_preset") or os.environ.get("LANG_PRESET", "multilingual")
-    tts_speed      = config.get("tts_speed") or os.environ.get("TTS_SPEED", "normal")
-    min_ep_delay   = float(config.get("stt_min_endpointing_delay") or os.environ.get("STT_EP_DELAY", "0.2"))
+    tts_voice_name = config.get("tts_voice") or "kavya"
+    lang_preset    = config.get("lang_preset") or "multilingual"
+    tts_speed      = config.get("tts_speed") or "slow"   # slightly slow = more human
+    min_ep_delay   = float(config.get("stt_min_endpointing_delay") or 0.2)
 
-    logger.info(f"[AGENT] LLM={llm_provider}/{llm_model} Voice={tts_voice_name} Lang={lang_preset} Speed={tts_speed}")
+    logger.info(f"[AGENT] LLM={llm_provider}/{llm_model} Voice={tts_voice_name} Lang={lang_preset}")
 
     # ── LLM ────────────────────────────────────────────────────────────────────
     if llm_provider == "groq":
@@ -339,65 +347,65 @@ async def entrypoint(ctx: JobContext):
             api_key=groq_key,
             temperature=0.7,
         )
+        logger.info(f"[LLM] Groq: {llm_model}")
     else:
         active_llm = openai.LLM(model=llm_model, temperature=0.7)
+        logger.info(f"[LLM] OpenAI: {llm_model}")
 
     # ── TTS ─────────────────────────────────────────────────────────────────────
-    SARVAM_VOICE_NAMES = {
-        "kavya", "meera", "arya", "anushka", "manisha", "vidya",
-        "abhilash", "karun", "hitesh", "shubh", "ritu", "rahul",
-        "pooja", "simran", "amit", "ratan", "rohan", "dev", "ishita",
-        "shreya", "manan", "sumit", "priya", "aditya", "kabir",
-        "neha", "varun", "roopa", "aayan", "ashutosh", "advait",
+    SARVAM_VOICES = {
+        "kavya","meera","arya","anushka","manisha","vidya","abhilash","karun",
+        "hitesh","shubh","ritu","rahul","pooja","simran","amit","ratan","rohan",
+        "dev","ishita","shreya","manan","sumit","priya","aditya","kabir",
+        "neha","varun","roopa","aayan","ashutosh","advait",
     }
 
     use_sarvam = (
         lang_preset in ("hi-IN", "multilingual", "en-IN")
-        or tts_voice_name.lower() in SARVAM_VOICE_NAMES
+        or tts_voice_name.lower() in SARVAM_VOICES
     )
 
-    _sarvam_pace_map = {"slow": 0.80, "normal": 0.92, "fast": 1.05}
-    _sarvam_pace = _sarvam_pace_map.get(tts_speed, 0.92)
-    _cartesia_speed = tts_speed if tts_speed in ("slowest", "slow", "normal", "fast", "fastest") else "normal"
+    # tts_speed → Sarvam pace:  slow=0.82, normal=0.92, fast=1.05
+    pace_map = {"slow": 0.82, "normal": 0.92, "fast": 1.05}
+    sarvam_pace = pace_map.get(tts_speed, 0.85)
+    # tts_speed → Cartesia: slow is valid Cartesia param
+    cartesia_speed = tts_speed if tts_speed in ("slowest","slow","normal","fast","fastest") else "slow"
 
     if use_sarvam:
         try:
             from livekit.plugins import sarvam
-            sarvam_key  = os.environ.get("SARVAM_API_KEY", "")
-            sarvam_voice = tts_voice_name.lower() if tts_voice_name.lower() in SARVAM_VOICE_NAMES else "kavya"
-            # en-IN = English text spoken with Indian rhythm — perfect for Hinglish output
+            sarvam_key   = os.environ.get("SARVAM_API_KEY", "")
+            sarvam_voice = tts_voice_name.lower() if tts_voice_name.lower() in SARVAM_VOICES else "kavya"
+            # en-IN = English text spoken with Indian rhythm → perfect for Hinglish
             sarvam_lang  = "en-IN" if lang_preset in ("multilingual", "en-IN") else "hi-IN"
             active_tts = sarvam.TTS(
                 api_key=sarvam_key,
                 target_language_code=sarvam_lang,
                 speaker=sarvam_voice,
                 speech_sample_rate=16000,
-                pace=_sarvam_pace,
+                pace=sarvam_pace,
                 pitch=0.0,
             )
-            logger.info(f"[TTS] Sarvam — voice={sarvam_voice}, lang={sarvam_lang}, pace={_sarvam_pace}")
+            logger.info(f"[TTS] Sarvam: voice={sarvam_voice}, lang={sarvam_lang}, pace={sarvam_pace}")
         except Exception as e:
-            logger.warning(f"[TTS] Sarvam failed ({e}), using Cartesia fallback")
+            logger.warning(f"[TTS] Sarvam failed ({e}), using Cartesia")
             active_tts = cartesia.TTS(
                 model="sonic-2",
                 voice="f786b574-daa5-4673-aa0c-cbe3e8534c02",
                 language="en",
-                speed=_cartesia_speed,
+                speed=cartesia_speed,
                 word_timestamps=True,
             )
     else:
-        cartesia_voice_id = (
-            tts_voice_name if len(tts_voice_name) > 10
-            else "f786b574-daa5-4673-aa0c-cbe3e8534c02"
-        )
+        cid = tts_voice_name if len(tts_voice_name) > 10 else "f786b574-daa5-4673-aa0c-cbe3e8534c02"
         active_tts = cartesia.TTS(
             model="sonic-2",
-            voice=cartesia_voice_id,
+            voice=cid,
             language="en",
-            speed=_cartesia_speed,
+            speed=cartesia_speed,
             word_timestamps=True,
         )
-        logger.info(f"[TTS] Cartesia — voice={cartesia_voice_id}, speed={_cartesia_speed}")
+        logger.info(f"[TTS] Cartesia: voice={cid}, speed={cartesia_speed}")
 
     # ── Agent ──────────────────────────────────────────────────────────────────
     agent = Agent(
@@ -406,15 +414,15 @@ async def entrypoint(ctx: JobContext):
     )
 
     # ── Session ────────────────────────────────────────────────────────────────
-    _is_multilingual = lang_preset in ("multilingual", "en-IN", "hi-IN")
-    _stt_language    = "hi" if (not _is_multilingual and "hi" in lang_preset) else "en-US"
+    is_multi  = lang_preset in ("multilingual", "en-IN", "hi-IN")
+    stt_lang  = "en-US"
 
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         stt=deepgram.STT(
             model="nova-3",
-            language=_stt_language,
-            detect_language=_is_multilingual,
+            language=stt_lang,
+            detect_language=is_multi,   # auto-detect Hindi / English
             interim_results=True,
             endpointing_ms=25,
             filler_words=True,
@@ -424,7 +432,7 @@ async def entrypoint(ctx: JobContext):
         llm=active_llm,
         tts=active_tts,
         min_endpointing_delay=min_ep_delay,
-        max_endpointing_delay=1.2,
+        max_endpointing_delay=1.5,
     )
 
     await session.start(
@@ -438,6 +446,7 @@ async def entrypoint(ctx: JobContext):
 
     await asyncio.sleep(0.3)
     await session.say(first_line, allow_interruptions=True)
+    logger.info(f"[AGENT] Greeting said: {first_line}")
 
 
 if __name__ == "__main__":

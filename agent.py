@@ -330,8 +330,8 @@ async def entrypoint(ctx: JobContext):
 
     # ── Settings ───────────────────────────────────────────────────────────────
     first_line     = config.get("first_line") or DEFAULT_FIRST_LINE
-    llm_provider   = config.get("llm_provider") or os.environ.get("LLM_PROVIDER", "groq")
-    llm_model      = config.get("llm_model") or os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile")
+    llm_provider   = config.get("llm_provider") or os.environ.get("LLM_PROVIDER", "openai")
+    llm_model      = config.get("llm_model") or os.environ.get("LLM_MODEL", "gpt-4o-mini")
     tts_voice_name = config.get("tts_voice") or "kavya"
     lang_preset    = config.get("lang_preset") or "multilingual"
     tts_speed      = config.get("tts_speed") or "slow"   # slightly slow = more human
@@ -339,17 +339,24 @@ async def entrypoint(ctx: JobContext):
 
     logger.info(f"[AGENT] LLM={llm_provider}/{llm_model} Voice={tts_voice_name} Lang={lang_preset}")
 
-    # ── LLM ────────────────────────────────────────────────────────────────────
+    # NOTE: openai.LLM.with_groq() does NOT exist in livekit-plugins-openai 1.4.2
+    # Groq exposes an OpenAI-compatible API — pass base_url instead
     if llm_provider == "groq":
         groq_key = os.environ.get("GROQ_API_KEY", "")
-        active_llm = openai.LLM.with_groq(
+        active_llm = openai.LLM(
             model=llm_model,
+            base_url="https://api.groq.com/openai/v1",
             api_key=groq_key,
             temperature=0.7,
         )
-        logger.info(f"[LLM] Groq: {llm_model}")
+        logger.info(f"[LLM] Groq (OpenAI-compat): {llm_model}")
     else:
-        active_llm = openai.LLM(model=llm_model, temperature=0.7)
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        active_llm = openai.LLM(
+            model=llm_model,
+            api_key=openai_key or None,
+            temperature=0.7,
+        )
         logger.info(f"[LLM] OpenAI: {llm_model}")
 
     # ── TTS ─────────────────────────────────────────────────────────────────────

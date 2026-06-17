@@ -352,8 +352,8 @@ async def entrypoint(ctx: JobContext):
     llm_model      = config.get("llm_model") or os.environ.get("LLM_MODEL", "gpt-4o-mini")
     tts_voice_name = config.get("tts_voice") or "anushka"
     lang_preset    = config.get("lang_preset") or "multilingual"
-    tts_speed      = config.get("tts_speed") or "slow"   # slightly slow = more human
-    min_ep_delay   = float(config.get("stt_min_endpointing_delay") or 0.2)
+    tts_speed      = config.get("tts_speed") or "normal"  # normal pace = natural human speed
+    min_ep_delay   = float(config.get("stt_min_endpointing_delay") or 0.15)
 
     logger.info(f"[AGENT] LLM={llm_provider}/{llm_model} Voice={tts_voice_name} Lang={lang_preset}")
 
@@ -390,11 +390,11 @@ async def entrypoint(ctx: JobContext):
         or tts_voice_name.lower() in SARVAM_VOICES
     )
 
-    # tts_speed → Sarvam pace:  slow=0.82, normal=0.92, fast=1.05
-    pace_map = {"slow": 0.82, "normal": 0.92, "fast": 1.05}
-    sarvam_pace = pace_map.get(tts_speed, 0.85)
-    # tts_speed → Cartesia: slow is valid Cartesia param
-    cartesia_speed = tts_speed if tts_speed in ("slowest","slow","normal","fast","fastest") else "slow"
+    # tts_speed → Sarvam pace: slow=0.87, normal=1.0, fast=1.15
+    pace_map = {"slow": 0.87, "normal": 1.0, "fast": 1.15}
+    sarvam_pace = pace_map.get(tts_speed, 1.0)
+    # tts_speed → Cartesia speed param
+    cartesia_speed = tts_speed if tts_speed in ("slowest","slow","normal","fast","fastest") else "normal"
 
     if use_sarvam:
         try:
@@ -458,7 +458,7 @@ async def entrypoint(ctx: JobContext):
         llm=active_llm,
         tts=active_tts,
         min_endpointing_delay=min_ep_delay,
-        max_endpointing_delay=1.5,
+        max_endpointing_delay=0.6,  # respond within 0.6s of caller stopping — feels natural
     )
 
     await session.start(

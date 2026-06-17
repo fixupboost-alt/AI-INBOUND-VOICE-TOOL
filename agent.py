@@ -332,7 +332,7 @@ async def entrypoint(ctx: JobContext):
     first_line     = config.get("first_line") or DEFAULT_FIRST_LINE
     llm_provider   = config.get("llm_provider") or os.environ.get("LLM_PROVIDER", "openai")
     llm_model      = config.get("llm_model") or os.environ.get("LLM_MODEL", "gpt-4o-mini")
-    tts_voice_name = config.get("tts_voice") or "kavya"
+    tts_voice_name = config.get("tts_voice") or "anushka"
     lang_preset    = config.get("lang_preset") or "multilingual"
     tts_speed      = config.get("tts_speed") or "slow"   # slightly slow = more human
     min_ep_delay   = float(config.get("stt_min_endpointing_delay") or 0.2)
@@ -382,7 +382,7 @@ async def entrypoint(ctx: JobContext):
         try:
             from livekit.plugins import sarvam
             sarvam_key   = os.environ.get("SARVAM_API_KEY", "")
-            sarvam_voice = tts_voice_name.lower() if tts_voice_name.lower() in SARVAM_VOICES else "kavya"
+            sarvam_voice = tts_voice_name.lower() if tts_voice_name.lower() in SARVAM_VOICES else "anushka"
             # en-IN = English text spoken with Indian rhythm → perfect for Hinglish
             sarvam_lang  = "en-IN" if lang_preset in ("multilingual", "en-IN") else "hi-IN"
             active_tts = sarvam.TTS(
@@ -397,7 +397,7 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"[TTS] Sarvam failed ({e}), using Cartesia")
             active_tts = cartesia.TTS(
-                model="sonic-2",
+                model="sonic-2-2025-03-07",
                 voice="f786b574-daa5-4673-aa0c-cbe3e8534c02",
                 language="en",
                 speed=cartesia_speed,
@@ -406,7 +406,7 @@ async def entrypoint(ctx: JobContext):
     else:
         cid = tts_voice_name if len(tts_voice_name) > 10 else "f786b574-daa5-4673-aa0c-cbe3e8534c02"
         active_tts = cartesia.TTS(
-            model="sonic-2",
+            model="sonic-2-2025-03-07",
             voice=cid,
             language="en",
             speed=cartesia_speed,
@@ -428,8 +428,9 @@ async def entrypoint(ctx: JobContext):
         vad=ctx.proc.userdata["vad"],
         stt=deepgram.STT(
             model="nova-3",
-            language=stt_lang,
-            detect_language=is_multi,   # auto-detect Hindi / English
+            # 'detect_language' is NOT supported in streaming mode.
+            # Use language="multi" for multilingual (Hindi+English) streaming.
+            language="multi" if is_multi else "en-US",
             interim_results=True,
             endpointing_ms=25,
             filler_words=True,

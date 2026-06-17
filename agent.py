@@ -206,7 +206,9 @@ async def get_next_available_slot(
                 f"label={slot['label']} IST, day={slot['weekday']}. "
                 f"Tell caller: 'Next available slot is {slot['weekday']} {slot['date']} "
                 f"at {slot['label']} IST. Does that work?' "
-                f"Once confirmed, collect name and email, then call book_consultation."
+                f"Once confirmed, collect name and email, then call book_consultation. "
+                f"CRITICAL: When calling book_consultation, you MUST pass date='{slot['date']}' "
+                f"and time_slot='{slot['time24']}' exactly as provided here."
             )
         return (
             "No slots found in next 7 days. "
@@ -229,8 +231,8 @@ async def get_next_available_slot(
 async def book_consultation(
     caller_name:  Annotated[str, "Caller's full name"],
     caller_email: Annotated[str, "Caller's email address"],
-    date:         Annotated[str, "Date in YYYY-MM-DD format"],
-    time_slot:    Annotated[str, "Time in HH:MM 24h format e.g. '10:00'"],
+    date:         Annotated[str, "Date in EXACTLY YYYY-MM-DD format (e.g. 2026-06-19)"],
+    time_slot:    Annotated[str, "Time in EXACTLY HH:MM 24h format (e.g. 10:00 or 17:00)"],
     notes:        Annotated[str, "Brief notes about caller's needs"] = "",
 ) -> str:
     """Create the real Cal.com booking via requests (thread-safe)."""
@@ -350,7 +352,8 @@ async def entrypoint(ctx: JobContext):
     first_line     = config.get("first_line") or DEFAULT_FIRST_LINE
     llm_provider   = config.get("llm_provider") or os.environ.get("LLM_PROVIDER", "openai")
     llm_model      = config.get("llm_model") or os.environ.get("LLM_MODEL", "gpt-4o-mini")
-    tts_voice_name = config.get("tts_voice") or "anushka"
+    # Default to a Cartesia voice unless explicitly configured to use Sarvam
+    tts_voice_name = config.get("tts_voice") or "f786b574-daa5-4673-aa0c-cbe3e8534c02"
     lang_preset    = config.get("lang_preset") or "multilingual"
     tts_speed      = config.get("tts_speed") or "normal"  # normal pace = natural human speed
     min_ep_delay   = float(config.get("stt_min_endpointing_delay") or 0.15)
@@ -385,10 +388,8 @@ async def entrypoint(ctx: JobContext):
         "neha","varun","roopa","aayan","ashutosh","advait",
     }
 
-    use_sarvam = (
-        lang_preset in ("hi-IN", "multilingual", "en-IN")
-        or tts_voice_name.lower() in SARVAM_VOICES
-    )
+    # Only use Sarvam if a specific Sarvam voice is requested
+    use_sarvam = tts_voice_name.lower() in SARVAM_VOICES
 
     # tts_speed → Sarvam pace: slow=0.87, normal=1.0, fast=1.15
     pace_map = {"slow": 0.87, "normal": 1.0, "fast": 1.15}

@@ -38,52 +38,68 @@ def get_available_slots(date_str: str) -> list:
 
 
 def _get_slots_calcom(date_str: str) -> list:
-    """Fetches real-time available availability tokens using Cal.com's modern v2 API."""
+    """Fetches real-time available slots using Cal.com's v2 API."""
     creds = get_cal_creds()
     try:
+        # Cal.com v2 requires full ISO 8601 datetime strings, not bare dates
+        start_dt = f"{date_str}T00:00:00Z"
+        end_dt   = f"{date_str}T23:59:59Z"
+
         resp = requests.get(
             "https://api.cal.com/v2/slots",
             headers={
                 "Authorization": f"Bearer {creds['api_key']}",
-                "cal-api-version": "2024-08-13",
+                "cal-api-version": "2024-09-04",   # Working version
                 "Content-Type": "application/json"
             },
             params={
                 "eventTypeId": creds["event_id"],
-                "start": date_str,
-                "end": date_str,
+                "start": start_dt,
+                "end":   end_dt,
             },
             timeout=8,
         )
         resp.raise_for_status()
-        
-        # Safe extraction across dict or list variant outputs from the v2 schema
+
+        # v2 response: {"data": {"YYYY-MM-DD": [{"start": "...ISO..."}, ...]}}
         resp_data = resp.json().get("data", {})
-        slots_obj = resp_data.get("slots", {})
-        
+
         raw_slots = []
-        if isinstance(slots_obj, dict):
-            raw_slots = slots_obj.get(date_str, [])
-        elif isinstance(slots_obj, list):
-            raw_slots = slots_obj
+        if isinstance(resp_data, dict):
+            # Could be keyed by date or directly be a list
+            raw_slots = resp_data.get(date_str, [])
+            if not raw_slots:
+                # Try any date key (API may normalize)
+                for v in resp_data.values():
+                    if isinstance(v, list):
+                        raw_slots = v
+                        break
+        elif isinstance(resp_data, list):
+            raw_slots = resp_data
 
         slots = []
         for s in raw_slots:
-            slot_time = s.get("time")
+            # v2 uses "start" key (not "time")
+            slot_time = s.get("start") or s.get("time")
             if slot_time:
-                # Clean format tracking string parameters cleanly
                 clean_time = slot_time.replace("Z", "+00:00")
-                dt = datetime.fromisoformat(clean_time)
+                dt_utc = datetime.fromisoformat(clean_time)
+                # Convert UTC to IST (UTC+5:30) for display
+                from datetime import timezone, timedelta
+                ist = timezone(timedelta(hours=5, minutes=30))
+                dt_ist = dt_utc.astimezone(ist)
                 slots.append({
-                    "time": slot_time, 
-                    "label": dt.strftime("%I:%M %p").lstrip('0')
+                    "time": slot_time,
+                    "label": dt_ist.strftime("%I:%M %p").lstrip("0"),
+                    "time_ist": dt_ist.strftime("%H:%M"),  # 24h format for booking
                 })
-                
-        logger.info(f"[CAL] {len(slots)} available v2 slots processed for {date_str}")
+
+        logger.info(f"[CAL] {len(slots)} available slots for {date_str}")
         return slots
     except Exception as e:
-        logger.error(f"[CAL] get_available_slots v2 pipeline error: {e}")
+        logger.error(f"[CAL] get_available_slots error: {e}")
         return []
+
 
 
 def _get_slots_gcal(date_str: str, calendar_id: str, creds_file: str) -> list:
@@ -262,13 +278,17 @@ async def _create_booking_gcal(
 # ─── Cancel a booking ──────────────────────────────────────────────────────────
 
 def cancel_booking(booking_id: str, reason: str = "Cancelled by caller") -> dict:
-    """Cancel a Cal.com booking by UID."""
+    """Cancel a Cal.com booking by UID using v2 API."""
     creds = get_cal_creds()
     try:
-        resp = requests.delete(
-            f"{CAL_BASE}/bookings/{booking_id}/cancel?apiKey={creds['api_key']}",
-            headers={"Content-Type": "application/json"},
-            json={"reason": reason},
+        resp = requests.post(
+            f"https://api.cal.com/v2/bookings/{booking_id}/cancel",
+            headers={
+                "Authorization": f"Bearer {creds['api_key']}",
+                "cal-api-version": "2024-08-13",
+                "Content-Type": "application/json",
+            },
+            json={"cancellationReason": reason},
             timeout=8,
         )
         resp.raise_for_status()

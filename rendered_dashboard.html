@@ -190,15 +190,15 @@
     <div class="page-header"><div class="page-title">Agent Settings</div></div>
     <div class="section-card">
       <div class="form-group">
-        <label>First Line greeting</label>
-        <input type="text" id="first_line">
+        <label>👋 Greeting Message <span style="opacity:0.6;font-size:12px;">(first thing agent says when call connects)</span></label>
+        <input type="text" id="first_line" placeholder="e.g. Thank you for calling AgentRox AI! How can I help you today?">
       </div>
       <div class="form-group">
-        <label>Master System Prompt</label>
-        <textarea id="agent_instructions" rows="12"></textarea>
+        <label>🧠 System Prompt <span style="opacity:0.6;font-size:12px;">(agent personality, your business info, call flow rules)</span></label>
+        <textarea id="agent_instructions" rows="22" style="font-family:monospace;font-size:13px;line-height:1.6;resize:vertical;" placeholder="Describe who the agent is, what your business does, how to handle calls, objection handling..."></textarea>
       </div>
       <div class="form-group" style="max-width:200px;">
-        <label>Endpointing Delay (s)</label>
+        <label>⏱️ Response Delay (s) <span style="opacity:0.5;font-size:11px;">(0.2 = fastest)</span></label>
         <input type="number" id="stt_min_endpointing_delay" step="0.1">
       </div>
     </div>
@@ -232,11 +232,36 @@
       <div class="form-row">
         <div class="form-group">
           <label>Speaker Voice</label>
-          <select id="tts_voice"><option value="kavya">Kavya</option><option value="rohan">Rohan</option></select>
+          <select id="tts_voice">
+            <optgroup label="Indian Voices — Hinglish/Hindi (Sarvam AI)">
+              <option value="kavya">Kavya — Warm Female 🇮🇳</option>
+              <option value="anushka">Anushka — Friendly Female 🇮🇳</option>
+              <option value="meera">Meera — Calm Female 🇮🇳</option>
+              <option value="pooja">Pooja — Energetic Female 🇮🇳</option>
+              <option value="priya">Priya — Professional Female 🇮🇳</option>
+              <option value="neha">Neha — Cheerful Female 🇮🇳</option>
+              <option value="ishita">Ishita — Natural Female 🇮🇳</option>
+              <option value="shreya">Shreya — Soft Female 🇮🇳</option>
+              <option value="rohan">Rohan — Friendly Male 🇮🇳</option>
+              <option value="aditya">Aditya — Confident Male 🇮🇳</option>
+              <option value="rahul">Rahul — Casual Male 🇮🇳</option>
+              <option value="kabir">Kabir — Deep Male 🇮🇳</option>
+              <option value="amit">Amit — Professional Male 🇮🇳</option>
+              <option value="dev">Dev — Energetic Male 🇮🇳</option>
+            </optgroup>
+            <optgroup label="International English (Cartesia)">
+              <option value="f786b574-daa5-4673-aa0c-cbe3e8534c02">Savannah — Warm Female 🌐</option>
+            </optgroup>
+          </select>
         </div>
         <div class="form-group">
-          <label>Language Preset</label>
-          <select id="tts_language"><option value="hi-IN">Hindi (hi-IN)</option><option value="en-IN">English (en-IN)</option></select>
+          <label>🌐 Language / Accent</label>
+          <select id="lang_preset">
+            <option value="multilingual">Hinglish / Multilingual 🇮🇳 (Recommended)</option>
+            <option value="en-IN">English — Indian Accent 🇮🇳</option>
+            <option value="hi-IN">Hindi Only 🇮🇳</option>
+            <option value="en">English — International 🌐</option>
+          </select>
         </div>
       </div>
     </div>
@@ -488,9 +513,9 @@ async function saveConfig(section) {
   const payload = {};
 
   if (section === 'agent') {
-    Object.assign(payload, { first_line: get('first_line'), agent_instructions: get('agent_instructions'), stt_min_endpointing_delay: parseFloat(get('stt_min_endpointing_delay') || 0.6) });
+    Object.assign(payload, { first_line: get('first_line'), agent_instructions: get('agent_instructions'), stt_min_endpointing_delay: parseFloat(get('stt_min_endpointing_delay') || 0.2), tts_speed: get('tts_speed') || 'normal' });
   } else if (section === 'models') {
-    Object.assign(payload, { llm_provider: get('llm_provider'), llm_model: get('llm_model'), tts_voice: get('tts_voice'), tts_language: get('tts_language') });
+    Object.assign(payload, { llm_provider: get('llm_provider'), llm_model: get('llm_model'), tts_voice: get('tts_voice'), lang_preset: get('lang_preset') });
   } else if (section === 'credentials') {
     Object.assign(payload, {
       livekit_url: get('livekit_url'), sip_trunk_id: get('sip_trunk_id'), livekit_api_key: get('livekit_api_key'), livekit_api_secret: get('livekit_api_secret'),
@@ -516,10 +541,11 @@ async function loadConfig() {
     set('first_line', cfg.first_line);
     set('agent_instructions', cfg.agent_instructions);
     set('stt_min_endpointing_delay', cfg.stt_min_endpointing_delay);
+      setSelect('tts_speed', cfg.tts_speed || 'normal');
     setSelect('llm_provider', cfg.llm_provider);
     setSelect('llm_model', cfg.llm_model);
     setSelect('tts_voice', cfg.tts_voice);
-    setSelect('tts_language', cfg.tts_language);
+    setSelect('lang_preset', cfg.lang_preset);
     set('livekit_url', cfg.livekit_url); set('sip_trunk_id', cfg.sip_trunk_id);
     set('livekit_api_key', cfg.livekit_api_key); set('livekit_api_secret', cfg.livekit_api_secret);
     set('openai_api_key', cfg.openai_api_key); set('sarvam_api_key', cfg.sarvam_api_key);

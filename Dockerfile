@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy and install Python deps into user local (isolated from system)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────

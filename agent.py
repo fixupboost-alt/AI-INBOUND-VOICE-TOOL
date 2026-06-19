@@ -1,19 +1,17 @@
 import logging
 import asyncio
 from dotenv import load_dotenv
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm
-from livekit.agents.pipeline import VoicePipelineAgent
+# In LiveKit 1.0+, VoicePipelineAgent is imported directly from livekit.agents!
+from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm, VoicePipelineAgent
 from livekit.plugins import deepgram, openai, silero, cartesia
 
 load_dotenv()
 logger = logging.getLogger("voice-agent")
 
 def prewarm(proc):
-    # Pre-loads the Voice Activity Detection model for instant human response times
     proc.userdata["vad"] = silero.VAD.load()
 
 async def entrypoint(ctx: JobContext):
-    # Your full company instruction context mapped strictly into the brain core
     initial_ctx = llm.ChatContext().append(
         role="system",
         text=(
@@ -52,22 +50,17 @@ async def entrypoint(ctx: JobContext):
     participant = await ctx.wait_for_participant()
     logger.info(f"SIP Telephony channel linked: {participant.identity}")
 
-    # Build the optimized low-latency voice pipeline agent
     agent = VoicePipelineAgent(
         vad=ctx.proc.userdata["vad"],
-        # Optimized with multi-language capabilities for quick phonetic shifts
         stt=deepgram.STT(language="en", model="nova-3", smart_format=True),
         llm=openai.LLM(model="gpt-4o-mini"),
         tts=cartesia.TTS(model="sonic-3", voice="f786b574-daa5-4673-aa0c-cbe3e8534c02"),
         chat_ctx=initial_ctx,
-        min_endpointing_delay=0.3,  # Dropped for fast human-like turn-taking response times
-        max_endpointing_delay=0.8,  # Cuts out dead conversational air
+        min_endpointing_delay=0.3,  
+        max_endpointing_delay=0.8,  
     )
 
-    # Start processing the audio room pipeline
     agent.start(ctx.room, participant)
-    
-    # Executing the exact required greeting instantly on connect
     await agent.say("Thank you for calling Agentrox Ai. This is the AI assistant. How can I help you today?", allow_interruptions=True)
 
 if __name__ == "__main__":

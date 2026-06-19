@@ -1,53 +1,29 @@
-# ══════════════════════════════════════════════════════════════════════════════
-# Multi-stage Dockerfile (#26) — smaller image, faster deploys
-# Stage 1: Build dependencies
-# Stage 2: Lean runtime image
-# ══════════════════════════════════════════════════════════════════════════════
+# Use an explicit, stable Python runtime base image
+FROM python:3.11-slim
 
-# ── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM python:3.11-slim AS builder
-
-WORKDIR /app
-
-# System deps for building native packages
+# Install system utilities needed by livekit plugins natively
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy and install Python deps into user local (isolated from system)
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir --upgrade -r requirements.txt
-
-
-# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
-
-WORKDIR /app
-
-# Only the runtime system deps needed (supervisor + CA certs)
-RUN apt-get update && apt-get install -y \
     supervisor \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder stage
-COPY --from=builder /root/.local /root/.local
+# Set up the application execution directory
+WORKDIR /app
 
-# Copy application code
+# Copy dependency configuration directly to workspace root
+COPY requirements.txt .
+
+# Force fresh package builds directly inside global runtime paths without caching
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --upgrade -r requirements.txt
+
+# Copy all remaining source files (agent.py, configuration settings)
 COPY . .
 
-# Copy supervisor config
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# Expose livekit framework operational monitoring ports
+EXPOSE 8080 8081 8000
 
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-# Expose UI port and LiveKit agent port
-EXPOSE 8000 8081
-
-# Start both services via supervisord
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Fire up the default daemon supervisor process layout
+CMD ["supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]

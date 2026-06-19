@@ -9,14 +9,15 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Explicitly copy your verified dependencies file
+COPY requirements.txt /app/requirements.txt
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --upgrade -r requirements.txt
+# Force global environment execution path installs
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . .
 
-# ── CRITICAL FIX: Copy the process manager configuration into the include folder ──
 COPY livekit-agent.conf /etc/supervisor/conf.d/livekit-agent.conf
 
 EXPOSE 8080 8081 8000

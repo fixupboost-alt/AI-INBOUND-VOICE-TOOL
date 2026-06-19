@@ -29,7 +29,7 @@ async def entrypoint(ctx: JobContext):
             "## Primary Objective\n"
             "Your primary goal is to book a Zoom meeting between the prospect and Kshitij. Do not try to close a sale on the call.\n\n"
             "## Call Flow Rules\n"
-            "1. Greeting: Start with the greeting provided.\n"
+            "1. Greeting: Start with: 'Thank you for calling Agentrox Ai. This is the AI assistant. How can I help you today?'\n"
             "2. Discovery: Ask about their business type, employee count, and challenges.\n"
             "3. Qualify & Offer: If interested, offer a free Zoom consultation with Kshitij.\n"
             "4. Collect Info: Collect and confirm Full Name and Email Address.\n"
@@ -55,8 +55,8 @@ async def entrypoint(ctx: JobContext):
         llm=openai.LLM(model="gpt-4o-mini"),
         tts=cartesia.TTS(model="sonic-3", voice="f786b574-daa5-4673-aa0c-cbe3e8534c02"),
         chat_ctx=initial_ctx,
-        min_endpointing_delay=0.2,  
-        max_endpointing_delay=0.5,  
+        min_endpointing_delay=0.3,  
+        max_endpointing_delay=0.8,  
     )
 
     agent.start(ctx.room, participant)
@@ -67,6 +67,6 @@ if __name__ == "__main__":
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
-            agent_name="inbound-voice-agent",  # <-- Explicit name mapping lock
+            agent_name="inbound-voice-agent",
         )
     )
